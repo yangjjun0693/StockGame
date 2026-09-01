@@ -1,23 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check } from 'lucide-react';
-
-/* ---------------------------------------------------------------- */
-/*  디자인 토큰                                                       */
-/* ---------------------------------------------------------------- */
-const C = {
-  paper: '#F6F7F9',
-  surface: '#FFFFFF',
-  ink: '#14171F',
-  inkDim: '#6E7480',
-  inkFaint: '#A2A8B4',
-  line: '#E4E7EC',
-  up: '#12A150',
-  upBg: '#E9F8EF',
-  down: '#E4463C',
-  downBg: '#FDECEB',
-};
-
-const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');`;
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon } from 'lucide-react';
 
 /* ---------------------------------------------------------------- */
 /*  종목 데이터                                                       */
@@ -97,17 +79,31 @@ const INITIAL_STOCKS = [
   },
 ];
 
+// poesi의 팔레트 태그를 이식한 섹터 컬러
+const SECTOR_COLORS = {
+  '반도체': '#5B6EF5',
+  '모빌리티': '#F2994A',
+  '바이오': '#2FAE6B',
+  '식품': '#D9A441',
+  '소재': '#8A6D4E',
+  '엔터': '#E0559C',
+  '신재생에너지': '#2BADA0',
+  'AI·소프트웨어': '#8259E8',
+  '항공·우주': '#3E7FC2',
+  '게임': '#D9556B',
+  '유통': '#B08968',
+  '광업·원자재': '#9C8AA5',
+};
+
 const TICK_MS = 7000;
 const HISTORY_LEN = 40;
 const STARTING_CASH = 10_000_000;
 
-// 뉴스 이벤트 — 45~75초 사이 랜덤 간격으로 한 번씩, 무작위 종목에 호재/악재 발생
 const NEWS_INTERVAL_MIN = 45000;
 const NEWS_INTERVAL_MAX = 75000;
 const NEWS_IMPACT_MIN = 0.05;
 const NEWS_IMPACT_MAX = 0.14;
 const NEWS_FEED_LIMIT = 30;
-// 같은 섹터 종목이 동반 반응하는 비율 (주 이벤트 임팩트 대비)
 const SECTOR_CORRELATION_MIN = 0.25;
 const SECTOR_CORRELATION_MAX = 0.45;
 
@@ -133,34 +129,16 @@ function nextPrice(price, beta = 1) {
 /*  도전과제                                                           */
 /* ---------------------------------------------------------------- */
 const ACHIEVEMENTS = [
-  {
-    id: 'first_buy', title: '첫 매수', desc: '아무 종목이나 처음으로 매수해보세요.',
-    check: (ctx) => ctx.transactions.some((t) => t.type === 'buy'),
-  },
-  {
-    id: 'first_profit_sell', title: '첫 익절', desc: '수익을 남기고 매도에 성공해보세요.',
-    check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl > 0),
-  },
-  {
-    id: 'diversify5', title: '분산투자', desc: '서로 다른 5개 종목을 동시에 보유해보세요.',
-    check: (ctx) => Object.keys(ctx.holdings).length >= 5,
-  },
-  {
-    id: 'big_win', title: '대박 거래', desc: '한 번의 매도로 50만 원 이상 수익을 실현해보세요.',
-    check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl >= 500000),
-  },
-  {
-    id: 'double_asset', title: '자산 2배', desc: '총자산을 시작 자금의 2배로 불려보세요.',
-    check: (ctx) => ctx.netWorth >= STARTING_CASH * 2,
-  },
-  {
-    id: 'news_trader', title: '정보력 승부', desc: '뉴스가 떴던 종목을 매매해보세요.',
-    check: (ctx) => ctx.transactions.some((t) => ctx.newsedStockIds.has(t.stockId)),
-  },
+  { id: 'first_buy', title: '첫 매수', desc: '아무 종목이나 처음으로 매수해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'buy') },
+  { id: 'first_profit_sell', title: '첫 익절', desc: '수익을 남기고 매도에 성공해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl > 0) },
+  { id: 'diversify5', title: '분산투자', desc: '서로 다른 5개 종목을 동시에 보유해보세요.', check: (ctx) => Object.keys(ctx.holdings).length >= 5 },
+  { id: 'big_win', title: '대박 거래', desc: '한 번의 매도로 50만 원 이상 수익을 실현해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl >= 500000) },
+  { id: 'double_asset', title: '자산 2배', desc: '총자산을 시작 자금의 2배로 불려보세요.', check: (ctx) => ctx.netWorth >= STARTING_CASH * 2 },
+  { id: 'news_trader', title: '정보력 승부', desc: '뉴스가 떴던 종목을 매매해보세요.', check: (ctx) => ctx.transactions.some((t) => ctx.newsedStockIds.has(t.stockId)) },
 ];
 
 /* ---------------------------------------------------------------- */
-/*  스파크라인 — 증권 앱에서 흔히 쓰는 그라디언트 영역차트 형식               */
+/*  스파크라인                                                         */
 /* ---------------------------------------------------------------- */
 let sparkUid = 0;
 function Sparkline({ history, positive, w = 64, h = 24, strokeWidth = 1.6, showBaseline = false }) {
@@ -170,7 +148,7 @@ function Sparkline({ history, positive, w = 64, h = 24, strokeWidth = 1.6, showB
   const max = Math.max(...history);
   const range = max - min || 1;
   const step = w / (history.length - 1);
-  const color = positive ? C.up : C.down;
+  const color = positive ? 'var(--up)' : 'var(--down)';
   const coords = history.map((v, i) => [i * step, h - ((v - min) / range) * h]);
   const linePoints = coords.map((p) => p.join(',')).join(' ');
   const areaPoints = `0,${h} ${linePoints} ${w},${h}`;
@@ -184,7 +162,7 @@ function Sparkline({ history, positive, w = 64, h = 24, strokeWidth = 1.6, showB
         </linearGradient>
       </defs>
       {showBaseline && (
-        <line x1={0} y1={baselineY} x2={w} y2={baselineY} stroke={C.inkFaint} strokeWidth={1} strokeDasharray="3,3" />
+        <line x1={0} y1={baselineY} x2={w} y2={baselineY} stroke="var(--ink-faint)" strokeWidth={1} strokeDasharray="3,3" />
       )}
       <polygon points={areaPoints} fill={`url(#${gradId})`} />
       <polyline points={linePoints} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
@@ -193,151 +171,129 @@ function Sparkline({ history, positive, w = 64, h = 24, strokeWidth = 1.6, showB
 }
 
 /* ---------------------------------------------------------------- */
-/*  수량 스테퍼                                                        */
+/*  수량 스테퍼 (poesi pill 스타일)                                      */
 /* ---------------------------------------------------------------- */
 function QtyStepper({ value, onChange, max }) {
   const dec = () => onChange(Math.max(1, value - 1));
   const inc = () => onChange(max ? Math.min(max, value + 1) : value + 1);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', height: 30 }}>
-      <button onClick={dec} style={stepBtnStyle}>−</button>
+    <div className="flex items-center border border-gray-200 rounded-full overflow-hidden h-8 shrink-0">
+      <button onClick={dec} className="w-7 h-full flex items-center justify-center text-gray-400 hover:text-gray-700 transition-colors">−</button>
       <input
         value={value}
         onChange={(e) => {
           const n = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
           onChange(Number.isNaN(n) ? 1 : Math.max(1, n));
         }}
-        style={{ width: 40, textAlign: 'center', border: 'none', outline: 'none', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 600, color: C.ink }}
+        className="w-9 text-center border-none outline-none bg-transparent font-inter text-xs font-semibold"
       />
-      <button onClick={inc} style={stepBtnStyle}>+</button>
+      <button onClick={inc} className="w-7 h-full flex items-center justify-center text-gray-400 hover:text-gray-700 transition-colors">+</button>
     </div>
   );
 }
-
-const stepBtnStyle = { width: 24, height: '100%', border: 'none', background: C.paper, color: C.inkDim, fontSize: 14, cursor: 'pointer', lineHeight: 1 };
-
-const actionBtnStyle = {
-  fontFamily: "'Space Grotesk', sans-serif",
-  fontWeight: 600,
-  fontSize: 12.5,
-  padding: '7px 12px',
-  borderRadius: 8,
-  border: 'none',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
 
 /* ---------------------------------------------------------------- */
 /*  환영 화면                                                          */
 /* ---------------------------------------------------------------- */
 function WelcomeScreen({ onStart }) {
   return (
-    <div style={{ minHeight: '100vh', background: C.paper, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Space Grotesk', sans-serif", padding: 24 }}>
-      <style>{`${FONT_IMPORT}
-        @keyframes floatTick { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-8px);} }
-      `}</style>
-      <div style={{ maxWidth: 480, width: '100%', textAlign: 'center' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginBottom: 24 }}>
-          {['📈', '💹', '📊'].map((e, i) => (
-            <span key={i} style={{ fontSize: 30, display: 'inline-block', animation: `floatTick ${2.2 + i * 0.3}s ease-in-out infinite` }}>{e}</span>
-          ))}
-        </div>
-        <div style={{ fontSize: 30, fontWeight: 700, color: C.ink, marginBottom: 8 }}>모의투자</div>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, letterSpacing: 2.5, color: C.inkDim, marginBottom: 22 }}>
-          VIRTUAL STOCK MARKET
-        </div>
-        <p style={{ color: C.inkDim, fontSize: 14.5, lineHeight: 1.7, marginBottom: 30 }}>
-          {fmt(STARTING_CASH)}원의 시드머니로 시작합니다.<br />
-          실시간으로 움직이는 6개 종목을 사고팔며 자산을 불려보세요.
+    <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="max-w-sm w-full text-center">
+        <p className="font-inter font-medium text-xs tracking-wide text-gray-400 mb-3">VIRTUAL STOCK MARKET</p>
+        <h1 className="font-myeongjo font-extrabold text-4xl mb-5">모의투자</h1>
+        <p className="font-inter text-sm text-gray-500 leading-7 mb-10">
+          {fmt(STARTING_CASH)}원의 시드머니로 시작해서<br />
+          실시간으로 움직이는 12개 종목을 사고팔며 자산을 불려보세요.
         </p>
         <button
           onClick={onStart}
-          style={{ ...actionBtnStyle, background: C.ink, color: '#fff', fontSize: 15, padding: '13px 28px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-7 py-3.5 hover:opacity-90 transition-opacity inline-flex items-center gap-1.5"
         >
           투자 시작하기 <ChevronRight size={16} />
         </button>
-        <div style={{ marginTop: 30, display: 'flex', justifyContent: 'center', gap: 26 }}>
-          {[['📈', '마켓'], ['📊', '대시보드']].map(([icon, label]) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, fontSize: 11.5, color: C.inkDim }}>
-              <span style={{ fontSize: 18 }}>{icon}</span>
-              {label}
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- */
-/*  종목 한 행 (클릭 시 상세 모달 오픈)                                    */
+/*  종목 카드 (poem-card 이식)                                          */
 /* ---------------------------------------------------------------- */
-function StockRow({ stock, holding, cash, onBuy, onSell, onOpenDetail }) {
+function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail }) {
   const [qty, setQty] = useState(1);
   const change = ((stock.price - stock.open) / stock.open) * 100;
-  const dirUp = stock.dir !== 'down'; // 'up' 또는 'flat'(초기)이면 상승 톤
-  const dirColor = stock.dir === 'down' ? C.down : stock.dir === 'up' ? C.up : C.inkFaint;
+  const dirColor = stock.dir === 'down' ? 'var(--down)' : stock.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = stock.dir === 'down' ? '▼' : stock.dir === 'up' ? '▲' : '–';
+  const sectorColor = SECTOR_COLORS[stock.sector] || '#999999';
   const cost = stock.price * qty;
   const canBuy = cash >= cost;
   const canSell = holding && holding.qty >= qty;
   const evalValue = holding ? holding.qty * stock.price : 0;
   const pnl = holding ? evalValue - holding.qty * holding.avgPrice : 0;
-  const pnlPositive = pnl >= 0;
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1.6fr 0.9fr 0.7fr 1.1fr 1.6fr',
-        alignItems: 'center',
-        gap: 12,
-        padding: '14px 4px',
-        borderBottom: `1px solid ${C.line}`,
-      }}
-    >
-      <div onClick={() => onOpenDetail(stock.id)} style={{ cursor: 'pointer' }}>
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14.5, color: C.ink }}>{stock.name}</div>
-        <div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 2 }}>{stock.sector}</div>
-      </div>
-
-      <div onClick={() => onOpenDetail(stock.id)} style={{ textAlign: 'right', cursor: 'pointer' }}>
-        <div key={Math.round(stock.price)} className="price-flash" style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 14.5, color: C.ink }}>
-          {fmt(stock.price)}
+    <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
+      <div className="flex justify-between items-start gap-4 mb-2 cursor-pointer" onClick={() => onOpenDetail(stock.id)}>
+        <div>
+          <h2 className="font-myeongjo font-bold text-lg mb-2">{stock.name}</h2>
+          <span
+            className="sector-tag inline-block font-inter font-medium text-xs px-3 py-1 rounded-full"
+            style={{ background: sectorColor + '22', color: sectorColor }}
+          >
+            {stock.sector}
+          </span>
         </div>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 600, color: dirColor, marginTop: 2 }}>
-          {dirArrow} {Math.abs(change).toFixed(2)}%
+        <div className="text-right shrink-0">
+          <div key={Math.round(stock.price)} className="price-flash font-inter font-bold text-lg tabular-nums">{fmt(stock.price)}</div>
+          <div className="font-inter text-xs font-semibold tabular-nums mt-1" style={{ color: dirColor }}>
+            {dirArrow} {Math.abs(change).toFixed(2)}%
+          </div>
         </div>
       </div>
 
-      <div onClick={() => onOpenDetail(stock.id)} style={{ display: 'flex', justifyContent: 'center', cursor: 'pointer' }}>
-        <Sparkline history={stock.history} positive={dirUp} />
+      <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
+
+      <div className="mb-5 cursor-pointer" onClick={() => onOpenDetail(stock.id)}>
+        <Sparkline history={stock.history} positive={stock.dir !== 'down'} w={320} h={44} />
       </div>
 
-      <div style={{ textAlign: 'right' }}>
-        {holding ? (
-          <>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: C.ink }}>{holding.qty}주 · 평단 {fmt(holding.avgPrice)}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 600, color: pnlPositive ? C.up : C.down, marginTop: 2 }}>
-              {pnlPositive ? '+' : ''}{fmt(pnl)}
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: 12, color: C.inkFaint }}>미보유</div>
-        )}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="font-inter text-xs text-gray-400">
+          {holding ? (
+            <>
+              {holding.qty}주 · 평단 {fmt(holding.avgPrice)}{' '}
+              <span className="font-semibold" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
+                ({pnl >= 0 ? '+' : ''}{fmt(pnl)})
+              </span>
+            </>
+          ) : (
+            '미보유'
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <QtyStepper value={qty} onChange={setQty} />
+          <button
+            onClick={() => onBuy(stock.id, qty)}
+            disabled={!canBuy}
+            className="pill-btn pill-btn-primary font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-30"
+          >
+            매수
+          </button>
+          <button
+            onClick={() => onSell(stock.id, qty)}
+            disabled={!canSell}
+            className="pill-btn font-inter font-medium text-xs border border-gray-200 rounded-full px-4 py-2 disabled:opacity-30"
+          >
+            매도
+          </button>
+        </div>
       </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-        <QtyStepper value={qty} onChange={setQty} />
-        <button onClick={() => onBuy(stock.id, qty)} disabled={!canBuy} style={{ ...actionBtnStyle, background: C.ink, color: '#fff', opacity: canBuy ? 1 : 0.35 }}>매수</button>
-        <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} style={{ ...actionBtnStyle, background: C.surface, color: C.ink, border: `1px solid ${C.line}`, opacity: canSell ? 1 : 0.35 }}>매도</button>
-      </div>
-    </div>
+    </article>
   );
 }
 
 /* ---------------------------------------------------------------- */
-/*  종목 상세 모달                                                      */
+/*  종목 상세 모달 (auth-modal 이식)                                     */
 /* ---------------------------------------------------------------- */
 function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
   const [qty, setQty] = useState(1);
@@ -345,8 +301,9 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
 
   const change = ((stock.price - stock.open) / stock.open) * 100;
   const dirUp = stock.dir !== 'down';
-  const dirColor = stock.dir === 'down' ? C.down : stock.dir === 'up' ? C.up : C.inkFaint;
+  const dirColor = stock.dir === 'down' ? 'var(--down)' : stock.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = stock.dir === 'down' ? '▼' : stock.dir === 'up' ? '▲' : '–';
+  const sectorColor = SECTOR_COLORS[stock.sector] || '#999999';
   const high = Math.max(...stock.history);
   const low = Math.min(...stock.history);
   const cost = stock.price * qty;
@@ -354,96 +311,77 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
   const canSell = holding && holding.qty >= qty;
   const evalValue = holding ? holding.qty * stock.price : 0;
   const pnl = holding ? evalValue - holding.qty * holding.avgPrice : 0;
-  const pnlPositive = pnl >= 0;
 
   return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(20,23,31,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 50 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ background: C.surface, borderRadius: 16, maxWidth: 440, width: '100%', padding: 26, boxShadow: '0 20px 60px rgba(20,23,31,0.18)' }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-          <div>
-            <div style={{ fontSize: 12, color: C.inkDim, fontWeight: 600, marginBottom: 2 }}>{stock.sector}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>{stock.name}</div>
-          </div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.inkFaint, padding: 4 }}>
-            <X size={20} />
-          </button>
-        </div>
+    <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
+      <div className="modal-backdrop absolute inset-0 bg-black/20 backdrop-blur-sm" />
+      <div onClick={(e) => e.stopPropagation()} className="modal-box relative bg-white w-full max-w-sm rounded-2xl p-7 shadow-xl">
+        <button onClick={onClose} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors">
+          <X size={18} />
+        </button>
 
-        <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, margin: '10px 0 20px' }}>{stock.desc}</p>
+        <p className="font-inter font-medium text-xs mb-1" style={{ color: sectorColor }}>{stock.sector}</p>
+        <h2 className="font-myeongjo font-bold text-xl mb-3">{stock.name}</h2>
+        <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
 
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 26, color: C.ink }}>{fmt(stock.price)}원</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: dirColor }}>
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className="font-inter font-bold text-2xl tabular-nums">{fmt(stock.price)}원</span>
+          <span className="font-inter text-xs font-semibold" style={{ color: dirColor }}>
             {dirArrow} {Math.abs(change).toFixed(2)}%
-          </div>
+          </span>
         </div>
 
-        <div style={{ margin: '14px 0', background: C.paper, borderRadius: 10, padding: '10px 12px' }}>
-          <Sparkline history={stock.history} positive={dirUp} w={368} h={64} strokeWidth={2} showBaseline />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.inkFaint, marginTop: 6, fontFamily: "'JetBrains Mono', monospace" }}>
+        <div className="my-4 bg-gray-50 rounded-xl p-3">
+          <Sparkline history={stock.history} positive={dirUp} w={330} h={64} strokeWidth={2} showBaseline />
+          <div className="flex justify-between text-[11px] text-gray-400 mt-2 font-inter tabular-nums">
             <span>최저 {fmt(low)}</span>
             <span>최고 {fmt(high)}</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 20, padding: '12px 0', borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, marginBottom: 18 }}>
+        <div className="flex gap-6 py-3 border-t border-b border-gray-100 mb-5 font-inter">
           <div>
-            <div style={{ fontSize: 11, color: C.inkDim, marginBottom: 3 }}>보유 수량</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 600, color: C.ink }}>{holding ? `${holding.qty}주` : '없음'}</div>
+            <div className="text-[11px] text-gray-400 mb-1">보유 수량</div>
+            <div className="text-sm font-semibold">{holding ? `${holding.qty}주` : '없음'}</div>
           </div>
           {holding && (
             <>
               <div>
-                <div style={{ fontSize: 11, color: C.inkDim, marginBottom: 3 }}>평단가</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 600, color: C.ink }}>{fmt(holding.avgPrice)}</div>
+                <div className="text-[11px] text-gray-400 mb-1">평단가</div>
+                <div className="text-sm font-semibold tabular-nums">{fmt(holding.avgPrice)}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: C.inkDim, marginBottom: 3 }}>평가손익</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 600, color: pnlPositive ? C.up : C.down }}>{pnlPositive ? '+' : ''}{fmt(pnl)}</div>
+                <div className="text-[11px] text-gray-400 mb-1">평가손익</div>
+                <div className="text-sm font-semibold tabular-nums" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
+                  {pnl >= 0 ? '+' : ''}{fmt(pnl)}
+                </div>
               </div>
             </>
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+        <div className="flex items-center justify-between gap-3">
           <QtyStepper value={qty} onChange={setQty} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => onBuy(stock.id, qty)} disabled={!canBuy} style={{ ...actionBtnStyle, background: C.ink, color: '#fff', padding: '9px 18px', opacity: canBuy ? 1 : 0.35 }}>매수</button>
-            <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} style={{ ...actionBtnStyle, background: C.surface, color: C.ink, border: `1px solid ${C.line}`, padding: '9px 18px', opacity: canSell ? 1 : 0.35 }}>매도</button>
+          <div className="flex gap-2">
+            <button onClick={() => onBuy(stock.id, qty)} disabled={!canBuy} className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
+            <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
           </div>
         </div>
-        <div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 10, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>
-          주문금액 {fmt(cost)}원
-        </div>
+        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">주문금액 {fmt(cost)}원</div>
       </div>
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- */
-/*  마켓 탭                                                            */
+/*  마켓 탭 — 세로 카드 피드 (poesi feed 이식)                            */
 /* ---------------------------------------------------------------- */
 function MarketTab({ stocks, holdings, cash, onBuy, onSell, onOpenDetail }) {
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.9fr 0.7fr 1.1fr 1.6fr', gap: 12, padding: '0 4px 10px', fontSize: 11, color: C.inkFaint, fontWeight: 600, borderBottom: `1px solid ${C.line}` }}>
-        <div>종목</div>
-        <div style={{ textAlign: 'right' }}>현재가</div>
-        <div style={{ textAlign: 'center' }}>추이</div>
-        <div style={{ textAlign: 'right' }}>보유</div>
-        <div style={{ textAlign: 'right' }}>주문</div>
-      </div>
-      <div>
-        {stocks.map((s) => (
-          <StockRow key={s.id} stock={s} holding={holdings[s.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
-        ))}
-      </div>
+    <div className="flex flex-col gap-10">
+      {stocks.map((s, i) => (
+        <StockCard key={s.id} index={i} stock={s} holding={holdings[s.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
+      ))}
     </div>
   );
 }
@@ -463,7 +401,7 @@ function NetWorthChart({ history }) {
   const points = history.map((v, i) => [i * step, h - ((v - min) / range) * h]);
   const linePoints = points.map((p) => p.join(',')).join(' ');
   const areaPoints = `0,${h} ${linePoints} ${w},${h}`;
-  const color = positive ? C.up : C.down;
+  const color = positive ? 'var(--up)' : 'var(--down)';
 
   return (
     <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
@@ -475,30 +413,22 @@ function NetWorthChart({ history }) {
 
 function AchievementsSection({ unlockedIds }) {
   return (
-    <div style={{ marginBottom: 28 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: C.inkDim, marginBottom: 8 }}>도전과제</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+    <div className="mb-10">
+      <p className="font-inter font-medium text-xs text-gray-400 mb-3">도전과제</p>
+      <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
         {ACHIEVEMENTS.map((a) => {
           const unlocked = unlockedIds.has(a.id);
           return (
             <div
               key={a.id}
-              style={{
-                display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 10,
-                background: unlocked ? C.surface : C.paper, border: `1px solid ${C.line}`, opacity: unlocked ? 1 : 0.6,
-              }}
+              className={`flex gap-2.5 items-start p-3.5 rounded-xl border ${unlocked ? 'bg-white border-gray-100' : 'bg-gray-50 border-gray-100 opacity-60'}`}
             >
-              <div
-                style={{
-                  flexShrink: 0, width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: unlocked ? C.upBg : C.line, color: unlocked ? C.up : C.inkFaint,
-                }}
-              >
-                {unlocked ? <Check size={14} /> : <Lock size={12} />}
+              <div className={`shrink-0 w-6 h-6 rounded-lg flex items-center justify-center ${unlocked ? '' : 'bg-gray-100'}`} style={unlocked ? { background: 'var(--up-bg)', color: 'var(--up)' } : { color: 'var(--ink-faint)' }}>
+                {unlocked ? <Check size={13} /> : <Lock size={11} />}
               </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{a.title}</div>
-                <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 2, lineHeight: 1.4 }}>{a.desc}</div>
+              <div className="min-w-0">
+                <div className="font-inter font-bold text-xs">{a.title}</div>
+                <div className="font-inter text-[11px] text-gray-400 mt-0.5 leading-snug">{a.desc}</div>
               </div>
             </div>
           );
@@ -511,25 +441,23 @@ function AchievementsSection({ unlockedIds }) {
 function TransactionsSection({ transactions }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: C.inkDim, marginBottom: 8 }}>체결 내역</div>
+      <p className="font-inter font-medium text-xs text-gray-400 mb-3">체결 내역</p>
       {transactions.length === 0 ? (
-        <div style={{ fontSize: 13, color: C.inkFaint, padding: '16px 0' }}>아직 체결된 거래가 없어요.</div>
+        <div className="font-inter text-sm text-gray-300 py-4">아직 체결된 거래가 없어요.</div>
       ) : (
         <div>
           {transactions.map((t) => (
-            <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '0.7fr 1.3fr 1fr 1fr 1fr', gap: 12, padding: '11px 4px', borderBottom: `1px solid ${C.line}`, alignItems: 'center' }}>
+            <div key={t.id} className="grid gap-3 py-2.5 border-b border-gray-50 items-center font-inter" style={{ gridTemplateColumns: '0.7fr 1.3fr 1fr 1fr 1fr' }}>
               <span
-                style={{
-                  fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 5, width: 'fit-content',
-                  background: t.type === 'buy' ? C.downBg : C.upBg, color: t.type === 'buy' ? C.down : C.up,
-                }}
+                className="font-inter font-bold text-[10.5px] px-1.5 py-0.5 rounded-md w-fit"
+                style={t.type === 'buy' ? { background: 'var(--down-bg)', color: 'var(--down)' } : { background: 'var(--up-bg)', color: 'var(--up)' }}
               >
                 {t.type === 'buy' ? '매수' : '매도'}
               </span>
-              <span style={{ fontSize: 13, color: C.ink }}>{t.stockName}</span>
-              <span style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: C.ink }}>{t.qty}주 · {fmt(t.price)}</span>
-              <span style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: C.ink }}>{fmt(t.total)}</span>
-              <span style={{ textAlign: 'right', fontSize: 11, color: C.inkFaint }}>{timeAgo(t.time, Date.now())}</span>
+              <span className="text-sm">{t.stockName}</span>
+              <span className="text-right text-xs tabular-nums">{t.qty}주 · {fmt(t.price)}</span>
+              <span className="text-right text-xs tabular-nums">{fmt(t.total)}</span>
+              <span className="text-right text-[11px] text-gray-400">{timeAgo(t.time, Date.now())}</span>
             </div>
           ))}
         </div>
@@ -553,49 +481,49 @@ function DashboardTab({ cash, holdings, stockById, netWorthHistory, unlockedIds,
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
+      <div className="flex gap-8 flex-wrap mb-6">
         <div>
-          <div style={{ fontSize: 11.5, color: C.inkDim, marginBottom: 4 }}>총자산</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 24, color: C.ink }}>{fmt(netWorth)}원</div>
+          <p className="font-inter text-xs text-gray-400 mb-1">총자산</p>
+          <div className="font-inter font-bold text-2xl tabular-nums">{fmt(netWorth)}원</div>
         </div>
         <div>
-          <div style={{ fontSize: 11.5, color: C.inkDim, marginBottom: 4 }}>누적 수익</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 24, color: positive ? C.up : C.down }}>
-            {positive ? '+' : ''}{fmt(totalReturn)}원 <span style={{ fontSize: 14 }}>({positive ? '+' : ''}{totalReturnPct.toFixed(2)}%)</span>
+          <p className="font-inter text-xs text-gray-400 mb-1">누적 수익</p>
+          <div className="font-inter font-bold text-2xl tabular-nums" style={{ color: positive ? 'var(--up)' : 'var(--down)' }}>
+            {positive ? '+' : ''}{fmt(totalReturn)}원 <span className="text-sm">({positive ? '+' : ''}{totalReturnPct.toFixed(2)}%)</span>
           </div>
         </div>
       </div>
 
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: '16px 16px 8px', marginBottom: 24 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: C.inkDim, marginBottom: 6 }}>자산 추이</div>
+      <div className="bg-white border border-gray-100 rounded-xl px-4 pt-4 pb-2 mb-7">
+        <p className="font-inter font-medium text-xs text-gray-400 mb-1.5">자산 추이</p>
         <NetWorthChart history={netWorthHistory} />
       </div>
 
-      <div style={{ display: 'flex', gap: 24, marginBottom: 14 }}>
+      <div className="flex gap-8 mb-4 font-inter">
         <div>
-          <div style={{ fontSize: 11.5, color: C.inkDim, marginBottom: 4 }}>현금</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, fontSize: 14, color: C.ink }}>{fmt(cash)}원</div>
+          <p className="text-xs text-gray-400 mb-1">현금</p>
+          <div className="font-semibold text-sm tabular-nums">{fmt(cash)}원</div>
         </div>
         <div>
-          <div style={{ fontSize: 11.5, color: C.inkDim, marginBottom: 4 }}>보유 종목 평가액</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, fontSize: 14, color: C.ink }}>{fmt(holdingsValue)}원</div>
+          <p className="text-xs text-gray-400 mb-1">보유 종목 평가액</p>
+          <div className="font-semibold text-sm tabular-nums">{fmt(holdingsValue)}원</div>
         </div>
       </div>
 
-      <div style={{ fontSize: 12, fontWeight: 600, color: C.inkDim, marginBottom: 8 }}>보유 종목</div>
+      <p className="font-inter font-medium text-xs text-gray-400 mb-3">보유 종목</p>
       {holdingsList.length === 0 ? (
-        <div style={{ fontSize: 13, color: C.inkFaint, padding: '20px 0' }}>보유 중인 종목이 없어요. 마켓에서 매수해보세요.</div>
+        <div className="font-inter text-sm text-gray-300 py-5 mb-6">보유 중인 종목이 없어요. 마켓에서 매수해보세요.</div>
       ) : (
-        <div style={{ marginBottom: 28 }}>
+        <div className="mb-8">
           {holdingsList.map((h) => (
-            <div key={h.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 12, padding: '12px 4px', borderBottom: `1px solid ${C.line}` }}>
+            <div key={h.id} className="grid gap-3 py-3 border-b border-gray-50" style={{ gridTemplateColumns: '1.4fr 1fr 1fr 1fr' }}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13.5, color: C.ink }}>{h.name}</div>
-                <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 2 }}>{h.sector}</div>
+                <div className="font-semibold text-sm">{h.name}</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">{h.sector}</div>
               </div>
-              <div style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: C.ink }}>{h.qty}주</div>
-              <div style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: C.ink }}>{fmt(h.value)}</div>
-              <div style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: h.pnl >= 0 ? C.up : C.down }}>
+              <div className="text-right text-sm tabular-nums">{h.qty}주</div>
+              <div className="text-right text-sm tabular-nums">{fmt(h.value)}</div>
+              <div className="text-right text-sm font-semibold tabular-nums" style={{ color: h.pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
                 {h.pnl >= 0 ? '+' : ''}{fmt(h.pnl)}
               </div>
             </div>
@@ -615,41 +543,31 @@ function DashboardTab({ cash, holdings, stockById, netWorthHistory, unlockedIds,
 function NewsTab({ news }) {
   const [, forceTick] = useState(0);
 
-  // 상대시간(몇 분 전) 표시를 위해 30초마다 리렌더
   useEffect(() => {
     const t = setInterval(() => forceTick((n) => n + 1), 30000);
     return () => clearInterval(t);
   }, []);
 
   if (news.length === 0) {
-    return <div style={{ fontSize: 13, color: C.inkFaint, padding: '32px 0', textAlign: 'center' }}>아직 발생한 뉴스가 없어요. 잠시 기다려보세요.</div>;
+    return <div className="font-inter text-sm text-gray-300 py-10 text-center">아직 발생한 뉴스가 없어요. 잠시 기다려보세요.</div>;
   }
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: C.inkFaint, marginBottom: 6, lineHeight: 1.5 }}>
-        어떤 종목 이야기인지는 알려주지 않아요. 마켓에서 직접 찾아보세요.
-      </div>
+      <p className="font-inter text-xs text-gray-400 mb-4 leading-relaxed">어떤 종목 이야기인지는 알려주지 않아요. 마켓에서 직접 찾아보세요.</p>
       {news.map((n) => (
-        <div key={n.id} style={{ display: 'flex', gap: 12, padding: '14px 4px', borderBottom: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              flexShrink: 0, width: 6, height: 6, borderRadius: 99, marginTop: 6,
-              background: n.positive ? C.up : C.down,
-            }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div key={n.id} className="flex gap-3 py-3.5 border-b border-gray-50">
+          <div className="shrink-0 w-1.5 h-1.5 rounded-full mt-1.5" style={{ background: n.positive ? 'var(--up)' : 'var(--down)' }} />
+          <div className="flex-1 min-w-0">
             <span
-              style={{
-                display: 'inline-block', fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, marginBottom: 4,
-                background: n.positive ? C.upBg : C.downBg, color: n.positive ? C.up : C.down,
-              }}
+              className="inline-block font-inter font-bold text-[10.5px] px-1.5 py-0.5 rounded-md mb-1"
+              style={n.positive ? { background: 'var(--up-bg)', color: 'var(--up)' } : { background: 'var(--down-bg)', color: 'var(--down)' }}
             >
               {n.positive ? '호재' : '악재'}
             </span>
-            <div style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.5 }}>{n.headline}</div>
+            <div className="font-inter text-sm leading-relaxed">{n.headline}</div>
           </div>
-          <div style={{ flexShrink: 0, fontSize: 11, color: C.inkFaint, whiteSpace: 'nowrap' }}>{timeAgo(n.time, Date.now())}</div>
+          <div className="shrink-0 text-[11px] text-gray-400 whitespace-nowrap">{timeAgo(n.time, Date.now())}</div>
         </div>
       ))}
     </div>
@@ -657,26 +575,19 @@ function NewsTab({ news }) {
 }
 
 /* ---------------------------------------------------------------- */
-/*  도전과제 달성 토스트                                                  */
+/*  도전과제 달성 토스트 (poesi toast 이식)                                */
 /* ---------------------------------------------------------------- */
 function AchievementToastStack({ toasts }) {
   if (toasts.length === 0) return null;
   return (
-    <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', gap: 8, zIndex: 60 }}>
+    <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
       {toasts.map((t) => (
         <div
           key={t.key}
-          className="achievement-toast"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10, background: C.ink, color: '#fff',
-            padding: '11px 16px', borderRadius: 10, boxShadow: '0 12px 30px rgba(20,23,31,0.25)', minWidth: 220,
-          }}
+          className="achievement-toast pointer-events-auto flex items-center gap-2 bg-gray-900 text-white font-inter text-sm font-medium px-5 py-3 rounded-full shadow-lg whitespace-nowrap"
         >
-          <Award size={18} color={C.gold || '#EAC13A'} />
-          <div>
-            <div style={{ fontSize: 10.5, opacity: 0.7, marginBottom: 1 }}>도전과제 달성</div>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{t.title}</div>
-          </div>
+          <Award size={15} />
+          도전과제 달성 · {t.title}
         </div>
       ))}
     </div>
@@ -684,13 +595,55 @@ function AchievementToastStack({ toasts }) {
 }
 
 /* ---------------------------------------------------------------- */
-/*  메인 컴포넌트                                                       */
+/*  하단 탭바 (poesi liquid glass tabbar 이식)                           */
 /* ---------------------------------------------------------------- */
 const TABS = [
   { id: 'market', label: '마켓', icon: TrendingUp },
   { id: 'news', label: '뉴스', icon: Newspaper },
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
 ];
+
+function Tabbar({ tab, setTab }) {
+  const btnRefs = useRef([]);
+  const [highlight, setHighlight] = useState({});
+
+  useLayoutEffect(() => {
+    const idx = TABS.findIndex((t) => t.id === tab);
+    const btn = btnRefs.current[idx];
+    if (!btn) return;
+    setHighlight({ transform: `translateX(${btn.offsetLeft}px)`, width: btn.offsetWidth });
+  }, [tab]);
+
+  return (
+    <nav className="tabbar-wrap">
+      <div className="tabbar" role="tablist">
+        <div className="tabbar-highlight" style={highlight} />
+        {TABS.map((t, i) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              ref={(el) => (btnRefs.current[i] = el)}
+              className="tab"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(t.id)}
+            >
+              <Icon size={20} />
+              <span className="tab-label">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/*  메인 컴포넌트                                                       */
+/* ---------------------------------------------------------------- */
+const TAB_TITLES = { market: '마켓', news: '뉴스', dashboard: '대시보드' };
 
 export default function StockGame() {
   const [started, setStarted] = useState(false);
@@ -704,6 +657,22 @@ export default function StockGame() {
   const [transactions, setTransactions] = useState([]);
   const [unlockedIds, setUnlockedIds] = useState(() => new Set());
   const [toasts, setToasts] = useState([]);
+  const [dark, setDark] = useState(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('stockgame_theme') : null;
+    if (saved) return saved === 'dark';
+    return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    localStorage.setItem('stockgame_theme', dark ? 'dark' : 'light');
+  }, [dark]);
+
+  const toggleTheme = () => {
+    document.documentElement.classList.add('theme-transitioning');
+    setDark((d) => !d);
+    setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 400);
+  };
 
   const stockById = useMemo(() => Object.fromEntries(stocks.map((s) => [s.id, s])), [stocks]);
   const newsedStockIds = useMemo(() => {
@@ -730,7 +699,6 @@ export default function StockGame() {
     return () => clearInterval(timer);
   }, [started]);
 
-  // 뉴스 이벤트 — 45~75초 사이 랜덤 간격으로 무작위 종목에 호재/악재 발생 (같은 섹터 종목도 동반 반응)
   useEffect(() => {
     if (!started) return;
     let timeoutId;
@@ -752,7 +720,6 @@ export default function StockGame() {
           const updated = [...prev];
           updated[idx] = { ...stock, price, dir, history };
 
-          // 같은 섹터 종목 동반 반응
           const affected = [];
           updated.forEach((s, i) => {
             if (i === idx || s.sector !== stock.sector) return;
@@ -776,7 +743,6 @@ export default function StockGame() {
     return () => clearTimeout(timeoutId);
   }, [started]);
 
-  // 총자산 추이 기록 (틱마다)
   useEffect(() => {
     if (!started) return;
     const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (stockById[id]?.price || 0), 0);
@@ -784,7 +750,6 @@ export default function StockGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks]);
 
-  // 도전과제 달성 체크 — 거래/보유/자산이 바뀔 때마다 확인
   useEffect(() => {
     if (!started) return;
     const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (stockById[id]?.price || 0), 0);
@@ -846,76 +811,58 @@ export default function StockGame() {
   const detailStock = detailId ? stockById[detailId] : null;
 
   return (
-    <div style={{ minHeight: '100vh', background: C.paper, color: C.ink, fontFamily: "'Space Grotesk', sans-serif" }}>
-      <style>{`
-        ${FONT_IMPORT}
-        * { box-sizing: border-box; }
-        input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        @keyframes priceFlash { 0% { opacity: 0.3; } 100% { opacity: 1; } }
-        .price-flash { animation: priceFlash 0.3s ease-out; }
-        .tab-btn { transition: color .15s; }
-        @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .achievement-toast { animation: toastIn 0.25s ease-out; }
-      `}</style>
-
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px 60px' }}>
+    <div className="min-h-screen">
+      <div className="max-w-xl mx-auto px-6 py-16">
         {/* 헤더 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <header className="flex justify-between items-start mb-14 gap-4 flex-wrap">
           <div>
-            <div style={{ fontSize: 12, color: C.inkDim, fontWeight: 600, marginBottom: 4 }}>모의투자</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{tab === 'market' ? '마켓' : tab === 'news' ? '뉴스' : '대시보드'}</div>
+            <p className="font-inter font-medium text-xs text-gray-400 mb-1">모의투자</p>
+            <h1 className="font-myeongjo font-bold text-2xl">{TAB_TITLES[tab]}</h1>
           </div>
-          <div style={{ display: 'flex', gap: 20 }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: C.inkDim }}>현금</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 14 }}>{fmt(cash)}</div>
+          <div className="flex items-center gap-5">
+            <div className="text-right">
+              <p className="font-inter text-[11px] text-gray-400">현금</p>
+              <div className="font-inter font-semibold text-sm tabular-nums">{fmt(cash)}</div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: C.inkDim }}>총자산</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 14 }}>{fmt(netWorth)}</div>
+            <div className="text-right">
+              <p className="font-inter text-[11px] text-gray-400">총자산</p>
+              <div className="font-inter font-semibold text-sm tabular-nums">{fmt(netWorth)}</div>
             </div>
+            <button
+              id="theme-toggle"
+              aria-label="다크모드 전환"
+              onClick={toggleTheme}
+              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              {dark ? <Sun key="sun" id="theme-icon" className="spin" size={18} /> : <Moon key="moon" id="theme-icon" className="spin" size={18} />}
+            </button>
           </div>
-        </div>
-
-        {/* 탭 네비게이션 */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 24, borderBottom: `1px solid ${C.line}` }}>
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                className="tab-btn"
-                onClick={() => setTab(t.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: 'none', border: 'none',
-                  borderBottom: active ? `2px solid ${C.ink}` : '2px solid transparent',
-                  color: active ? C.ink : C.inkFaint, cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                }}
-              >
-                <Icon size={15} />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        </header>
 
         {/* 컨텐츠 */}
-        {tab === 'market' && (
-          <MarketTab stocks={stocks} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
-        )}
-        {tab === 'news' && <NewsTab news={news} />}
-        {tab === 'dashboard' && (
-          <DashboardTab
-            cash={cash}
-            holdings={holdings}
-            stockById={stockById}
-            netWorthHistory={netWorthHistory}
-            unlockedIds={unlockedIds}
-            transactions={transactions}
-          />
-        )}
+        <div key={tab} className="view active">
+          {tab === 'market' && (
+            <MarketTab stocks={stocks} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
+          )}
+          {tab === 'news' && <NewsTab news={news} />}
+          {tab === 'dashboard' && (
+            <DashboardTab
+              cash={cash}
+              holdings={holdings}
+              stockById={stockById}
+              netWorthHistory={netWorthHistory}
+              unlockedIds={unlockedIds}
+              transactions={transactions}
+            />
+          )}
+        </div>
+
+        <footer className="mt-20 pt-6 border-t border-gray-100 text-center">
+          <p className="font-inter font-medium text-xs text-gray-300">모의투자 · 실제 거래가 아닙니다</p>
+        </footer>
       </div>
+
+      <Tabbar tab={tab} setTab={setTab} />
 
       {detailStock && (
         <StockDetailModal

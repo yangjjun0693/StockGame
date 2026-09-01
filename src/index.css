@@ -1,111 +1,209 @@
+/* ========================================
+   index.css — poesi 디자인 시스템 이식
+   ======================================== */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --ink: #0A0A0A;
+  --ink-dim: rgba(80, 85, 100, 0.65);
+  --ink-faint: rgba(80, 85, 100, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --highlight-bg: linear-gradient(180deg, rgba(200, 205, 215, 0.5), rgba(180, 185, 195, 0.2));
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --base-bg: #f0f2f5;
+  --up: #12A150;
+  --up-bg: rgba(18, 161, 80, 0.12);
+  --down: #E4463C;
+  --down-bg: rgba(228, 70, 60, 0.1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+html.dark {
+  --ink: #f2f2f2;
+  --ink-dim: rgba(210, 213, 225, 0.65);
+  --ink-faint: rgba(210, 213, 225, 0.4);
+  --glass-bg: rgba(30, 30, 34, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --highlight-bg: linear-gradient(180deg, rgba(90, 95, 110, 0.5), rgba(70, 75, 90, 0.2));
+  --base-bg: #131316;
+  --up: #34c77c;
+  --up-bg: rgba(52, 199, 124, 0.14);
+  --down: #ff6b61;
+  --down-bg: rgba(255, 107, 97, 0.12);
 }
 
+* { box-sizing: border-box; }
+html, body { min-height: 100vh; }
 body {
   margin: 0;
+  background: var(--base-bg);
+  color: var(--ink);
+  padding-bottom: 110px;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+html { background: var(--base-bg); transition: background-color 0.4s ease; }
+
+html.theme-transitioning, html.theme-transitioning * {
+  transition: background-color 0.35s ease, color 0.35s ease, border-color 0.35s ease, fill 0.35s ease, stroke 0.35s ease;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+a, button { transition: transform 0.2s var(--ease), background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease; }
+#theme-toggle:hover { background: rgba(0,0,0,0.06); transform: scale(1.08) rotate(12deg); }
+html.dark #theme-toggle:hover { background: rgba(255,255,255,0.08); }
+.pill-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.pill-btn-primary:not(:disabled):hover { box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+
+@keyframes theme-spin {
+  from { transform: rotate(-100deg) scale(0.4); opacity: 0; }
+  to { transform: rotate(0) scale(1); opacity: 1; }
+}
+#theme-icon.spin { animation: theme-spin 0.45s var(--spring); }
+
+/* ===== 자동 다크모드 tailwind 색상 오버라이드 ===== */
+html.dark .text-gray-300 { color: #6b6b70 !important; }
+html.dark .text-gray-400 { color: #8a8a90 !important; }
+html.dark .text-gray-500 { color: #9a9aa0 !important; }
+html.dark .text-gray-600 { color: #b0b0b6 !important; }
+html.dark .text-gray-700 { color: #c8c8ce !important; }
+html.dark .text-gray-800 { color: #e0e0e5 !important; }
+html.dark .text-gray-900 { color: #f5f5f5 !important; }
+html.dark .bg-white { background-color: #1c1c20 !important; }
+html.dark .bg-gray-50 { background-color: #1f1f24 !important; }
+html.dark .bg-gray-100 { background-color: #232327 !important; }
+html.dark .bg-gray-900 { background-color: #f0f0f0 !important; color: #111 !important; }
+html.dark .bg-gray-900:hover { background-color: #d8d8d8 !important; }
+html.dark .border-gray-50 { border-color: #29292d !important; }
+html.dark .border-gray-100 { border-color: #2c2c31 !important; }
+html.dark .border-gray-200 { border-color: #35353a !important; }
+
+/* ===== Tabbar (liquid glass, poesi 원본) ===== */
+.tabbar-wrap {
+  position: fixed;
+  bottom: 20px;
+  left: 0;
+  right: 0;
   display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  justify-content: center;
+  z-index: 50;
+  pointer-events: none;
+  animation: slide-up 0.6s var(--spring) 0.2s both;
 }
-
-h1,
-h2 {
-  font-family: var(--heading);
+@keyframes slide-up {
+  from { transform: translateY(80px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.tabbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  pointer-events: auto;
+  animation: float 5s ease-in-out infinite;
+  animation-delay: 0.8s;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-3px); }
+  50% { transform: translateY(1px); }
+  75% { transform: translateY(-2px); }
+}
+.tabbar-highlight {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  z-index: 1;
+  border-radius: 999px;
+  width: 56px;
+  background: var(--highlight-bg);
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9);
+  transition: transform 0.5s var(--spring), width 0.4s var(--spring);
+  pointer-events: none;
+  will-change: transform, width;
+}
+.tab {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 14px;
+  border: none;
+  background: none;
+  color: var(--ink-dim);
+  font-size: 13px;
   font-weight: 500;
-  color: var(--text-h);
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s var(--ease);
+  font-family: 'Inter', sans-serif;
+}
+.tab svg { width: 20px; height: 20px; flex-shrink: 0; transition: transform 0.3s var(--spring); }
+.tab[aria-selected="true"] { color: var(--ink); }
+.tab:not([aria-selected="true"]):hover { color: rgba(30,35,50,0.8); }
+.tab:not([aria-selected="true"]):hover svg { transform: scale(1.08); }
+html.dark .tab:not([aria-selected="true"]):hover { color: rgba(230,232,240,0.85); }
+.tab-label {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-left: 0;
+  transition: max-width 0.35s var(--ease), opacity 0.25s var(--ease), margin-left 0.35s var(--ease);
+}
+.tab[aria-selected="true"] .tab-label { max-width: 80px; opacity: 1; margin-left: 7px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar-wrap { animation: none !important; transform: none !important; opacity: 1 !important; }
+  .tabbar { animation: none !important; }
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+/* ===== View 전환 ===== */
+.view { animation: fadeView 0.25s ease; }
+@keyframes fadeView {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* ===== 종목 카드 (poem-card 이식) ===== */
+.stock-card { animation: fadeUp 0.5s ease forwards; transition: transform 0.3s var(--ease); }
+.stock-card:hover { transform: translateY(-3px); }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes priceFlash { 0% { opacity: 0.35; } 100% { opacity: 1; } }
+.price-flash { animation: priceFlash 0.3s ease-out; }
+
+.sector-tag, .palette-tag { transition: all 0.2s ease; cursor: pointer; }
+.sector-tag:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+/* ===== 모달 (auth-modal 이식) ===== */
+.modal-backdrop { animation: fadeIn 0.25s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal-box { animation: modalIn 0.35s var(--ease); }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
+/* ===== 토스트 ===== */
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.achievement-toast { animation: toastIn 0.25s ease-out; }
+
+/* ===== 입력 ===== */
+.auth-input { width: 100%; border: none; border-bottom: 1px solid #e5e7eb; padding: 10px 0; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500; outline: none; background: transparent; color: var(--ink); }
+.auth-input:focus { border-bottom-color: var(--ink); }
+html.dark .auth-input { border-bottom-color: #35353a; }
+
+input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
