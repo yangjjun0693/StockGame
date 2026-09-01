@@ -2,6 +2,8 @@
    index.css — poesi 디자인 시스템 이식
    ======================================== */
 
+@import "tailwindcss";
+
 :root {
   --ink: #0A0A0A;
   --ink-dim: rgba(80, 85, 100, 0.65);
