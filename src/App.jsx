@@ -605,18 +605,72 @@ const TABS = [
 
 function Tabbar({ tab, setTab }) {
   const btnRefs = useRef([]);
+  const barRef = useRef(null);
   const [highlight, setHighlight] = useState({});
 
-  useLayoutEffect(() => {
+  const moveHighlight = () => {
     const idx = TABS.findIndex((t) => t.id === tab);
     const btn = btnRefs.current[idx];
     if (!btn) return;
     setHighlight({ transform: `translateX(${btn.offsetLeft}px)`, width: btn.offsetWidth });
+  };
+
+  useLayoutEffect(() => {
+    moveHighlight();
+    const idx = TABS.findIndex((t) => t.id === tab);
+    const btn = btnRefs.current[idx];
+    if (!btn) return;
+    btn.classList.remove('is-bouncing');
+    void btn.offsetWidth;
+    btn.classList.add('is-bouncing');
+    const timer = setTimeout(() => btn.classList.remove('is-bouncing'), 500);
+    return () => clearTimeout(timer);
   }, [tab]);
+
+  useEffect(() => {
+    window.addEventListener('resize', moveHighlight);
+    return () => window.removeEventListener('resize', moveHighlight);
+  }, [tab]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const idx = ['1', '2', '3', '4', '5'].indexOf(e.key);
+      if (idx >= 0 && idx < TABS.length) {
+        e.preventDefault();
+        setTab(TABS[idx].id);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  const handlePointerMove = (e) => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const r = bar.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 100;
+    const y = ((e.clientY - r.top) / r.height) * 100;
+    bar.style.setProperty('--mx', `${x}%`);
+    bar.style.setProperty('--my', `${y}%`);
+  };
+
+  const handlePointerLeave = () => {
+    const bar = barRef.current;
+    if (!bar) return;
+    bar.style.setProperty('--mx', '50%');
+    bar.style.setProperty('--my', '0%');
+  };
 
   return (
     <nav className="tabbar-wrap">
-      <div className="tabbar" role="tablist">
+      <div
+        className="tabbar"
+        role="tablist"
+        ref={barRef}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+      >
         <div className="tabbar-highlight" style={highlight} />
         {TABS.map((t, i) => {
           const Icon = t.icon;

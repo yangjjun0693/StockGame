@@ -155,6 +155,14 @@ html.dark .border-gray-200 { border-color: #35353a !important; }
 .tab:not([aria-selected="true"]):hover { color: rgba(30,35,50,0.8); }
 .tab:not([aria-selected="true"]):hover svg { transform: scale(1.08); }
 html.dark .tab:not([aria-selected="true"]):hover { color: rgba(230,232,240,0.85); }
+.tab.is-bouncing svg {
+  animation: bounce 0.45s var(--spring);
+}
+@keyframes bounce {
+  25% { transform: scale(0.7); }
+  55% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
 .tab-label {
   max-width: 0;
   opacity: 0;
@@ -165,9 +173,55 @@ html.dark .tab:not([aria-selected="true"]):hover { color: rgba(230,232,240,0.85)
 }
 .tab[aria-selected="true"] .tab-label { max-width: 80px; opacity: 1; margin-left: 7px; }
 
+.tabbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120px 80px at var(--mx, 50%) var(--my, 0%), rgba(0,0,0,0.04), transparent 70%);
+  opacity: 0.6;
+  mix-blend-mode: multiply;
+  transition: background 0.1s ease-out;
+}
+html.dark .tabbar::before {
+  background: radial-gradient(120px 80px at var(--mx, 50%) var(--my, 0%), rgba(255,255,255,0.06), transparent 70%);
+  mix-blend-mode: screen;
+}
+
+.tabbar::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: -10%;
+  width: 40px;
+  border-radius: 999px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(0,0,0,0) 20%, rgba(0,0,0,0.04) 50%, rgba(0,0,0,0) 80%, transparent 100%);
+  mix-blend-mode: multiply;
+  animation: shimmer 6s ease-in-out infinite;
+  animation-delay: 1.2s;
+}
+html.dark .tabbar::after {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0) 20%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0) 80%, transparent 100%);
+  mix-blend-mode: screen;
+}
+@keyframes shimmer {
+  0% { left: -10%; opacity: 0; }
+  10% { opacity: 0.6; }
+  40% { left: 90%; opacity: 0.6; }
+  50% { left: 90%; opacity: 0; }
+  100% { left: -10%; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tabbar-wrap { animation: none !important; transform: none !important; opacity: 1 !important; }
   .tabbar { animation: none !important; }
+  .tabbar::after { animation: none !important; display: none; }
+  .tab.is-bouncing svg { animation: none !important; }
 }
 
 /* ===== View 전환 ===== */
