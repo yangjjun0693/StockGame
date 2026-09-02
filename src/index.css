@@ -108,14 +108,6 @@ html.dark .border-gray-200 { border-color: #35353a !important; }
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   pointer-events: auto;
-  animation: float 5s ease-in-out infinite;
-  animation-delay: 0.8s;
-}
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  25% { transform: translateY(-3px); }
-  50% { transform: translateY(1px); }
-  75% { transform: translateY(-2px); }
 }
 .tabbar-highlight {
   position: absolute;
@@ -155,14 +147,6 @@ html.dark .border-gray-200 { border-color: #35353a !important; }
 .tab:not([aria-selected="true"]):hover { color: rgba(30,35,50,0.8); }
 .tab:not([aria-selected="true"]):hover svg { transform: scale(1.08); }
 html.dark .tab:not([aria-selected="true"]):hover { color: rgba(230,232,240,0.85); }
-.tab.is-bouncing svg {
-  animation: bounce 0.45s var(--spring);
-}
-@keyframes bounce {
-  25% { transform: scale(0.7); }
-  55% { transform: scale(1.15); }
-  100% { transform: scale(1); }
-}
 .tab-label {
   max-width: 0;
   opacity: 0;
@@ -219,9 +203,7 @@ html.dark .tabbar::after {
 
 @media (prefers-reduced-motion: reduce) {
   .tabbar-wrap { animation: none !important; transform: none !important; opacity: 1 !important; }
-  .tabbar { animation: none !important; }
   .tabbar::after { animation: none !important; display: none; }
-  .tab.is-bouncing svg { animation: none !important; }
 }
 
 /* ===== View 전환 ===== */

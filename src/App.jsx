@@ -620,11 +620,18 @@ function Tabbar({ tab, setTab }) {
     const idx = TABS.findIndex((t) => t.id === tab);
     const btn = btnRefs.current[idx];
     if (!btn) return;
-    btn.classList.remove('is-bouncing');
-    void btn.offsetWidth;
-    btn.classList.add('is-bouncing');
-    const timer = setTimeout(() => btn.classList.remove('is-bouncing'), 500);
-    return () => clearTimeout(timer);
+
+    // tab-label의 max-width 트랜지션이 끝나면 최종 레이아웃 기준으로 하이라이트 재보정
+    const label = btn.querySelector('.tab-label');
+    let handler;
+    if (label) {
+      handler = () => moveHighlight();
+      label.addEventListener('transitionend', handler);
+    }
+
+    return () => {
+      if (label && handler) label.removeEventListener('transitionend', handler);
+    };
   }, [tab]);
 
   useEffect(() => {
