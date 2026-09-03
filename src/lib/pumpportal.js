@@ -74,12 +74,14 @@ export function usePumpPortalCoins() {
           symbol: (data.symbol || '?').toUpperCase(),
           name: data.name || data.symbol || `${mint.slice(0, 6)}...`,
           assetType: 'coin',
+          tier: 'pump',
           price: priceUsd,
           priceSol,
           open: priceUsd,
           dir: 'flat',
           history: [priceUsd],
           marketCapSol: data.marketCapSol || 0,
+          marketCapUsd: (data.marketCapSol || 0) * solUsdRef.current,
           createdAt: Date.now(),
           lastTradeAt: Date.now(),
         });
@@ -98,6 +100,7 @@ export function usePumpPortalCoins() {
         dir,
         history,
         marketCapSol: data.marketCapSol ?? existing.marketCapSol,
+        marketCapUsd: (data.marketCapSol ?? existing.marketCapSol ?? 0) * solUsdRef.current,
         lastTradeAt: Date.now(),
       });
       dirtyRef.current = true;

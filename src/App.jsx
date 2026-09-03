@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut } from 'lucide-react';
-import { signUp, signIn, signOut, getStoredAccount } from './lib/supabase';
+import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
 import { usePumpPortalCoins } from './lib/pumpportal';
 
 /* ---------------------------------------------------------------- */
@@ -286,33 +286,15 @@ function LoginScreen({ onAuthed }) {
 }
 
 /* ---------------------------------------------------------------- */
-/*  환영 화면                                                          */
+/*  로딩 화면                                                          */
 /* ---------------------------------------------------------------- */
-function WelcomeScreen({ onStart, nickname, onLogout }) {
+function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-sm w-full text-center">
         <p className="font-inter font-medium text-xs tracking-wide text-gray-400 mb-3">VIRTUAL STOCK MARKET</p>
         <h1 className="font-myeongjo font-extrabold text-4xl mb-5">모의투자</h1>
-        <p className="font-inter text-sm text-gray-500 leading-7 mb-10">
-          {nickname && <>{nickname}님, 환영합니다.<br /></>}
-          {fmt(STARTING_CASH)}의 시드머니로 시작해서<br />
-          실시간으로 움직이는 12개 종목을 사고팔며 자산을 불려보세요.
-        </p>
-        <button
-          onClick={onStart}
-          className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-7 py-3.5 hover:opacity-90 transition-opacity inline-flex items-center gap-1.5"
-        >
-          투자 시작하기 <ChevronRight size={16} />
-        </button>
-        {onLogout && (
-          <button
-            onClick={onLogout}
-            className="block mx-auto mt-6 font-inter text-xs text-gray-300 hover:text-gray-500 transition-colors"
-          >
-            로그아웃
-          </button>
-        )}
+        <p className="font-inter text-sm text-gray-400">불러오는 중...</p>
       </div>
     </div>
   );
@@ -973,6 +955,8 @@ const TAB_TITLES = { market: '마켓', news: '뉴스', dashboard: '대시보드'
 export default function StockGame() {
   const [account, setAccount] = useState(() => getStoredAccount());
   const [started, setStarted] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [tab, setTab] = useState('market');
   const [stocks, setStocks] = useState(() => INITIAL_STOCKS.map((s) => ({ ...s, assetType: 'stock', open: s.price, history: [s.price], dir: 'flat' })));
   const coins = usePumpPortalCoins();
@@ -994,7 +978,40 @@ export default function StockGame() {
     signOut();
     setAccount(null);
     setStarted(false);
+    setDataLoaded(false);
+    setCash(STARTING_CASH);
+    setHoldings({});
+    setTransactions([]);
+    setNetWorthHistory([STARTING_CASH]);
+    setUnlockedIds(new Set());
   };
+
+  // 계정이 있으면(로그인 직후 또는 새로고침 후 캐시된 계정) Supabase에서
+  // 저장된 포트폴리오(현금/보유종목/거래내역)를 불러와서 바로 게임 화면으로 진입.
+  // 환영 화면 없이, 로그인만 되면 자동으로 이어서 시작한다.
+  useEffect(() => {
+    if (!account || dataLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const portfolio = await fetchPortfolio(account.id);
+        if (cancelled) return;
+        const initialCash = portfolio.isNew ? STARTING_CASH : portfolio.cash;
+        setCash(initialCash);
+        setHoldings(portfolio.holdings);
+        setTransactions(portfolio.transactions);
+        setNetWorthHistory([initialCash]);
+        if (portfolio.isNew) {
+          saveSnapshot(account.id, STARTING_CASH, STARTING_CASH).catch(() => {});
+        }
+        setDataLoaded(true);
+        setStarted(true);
+      } catch (err) {
+        if (!cancelled) setLoadError(err.message || '포트폴리오를 불러오지 못했어요.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [account, dataLoaded]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -1107,16 +1124,24 @@ export default function StockGame() {
     const stock = assetsById[id];
     const cost = stock.price * qty;
     if (cash < cost) return;
-    setCash((c) => c - cost);
-    setHoldings((prev) => {
-      const cur = prev[id];
-      const newQty = (cur?.qty || 0) + qty;
-      const newAvg = cur ? (cur.avgPrice * cur.qty + cost) / newQty : stock.price;
-      return { ...prev, [id]: { qty: newQty, avgPrice: newAvg } };
-    });
+    const cur = holdings[id];
+    const newQty = (cur?.qty || 0) + qty;
+    const newAvg = cur ? (cur.avgPrice * cur.qty + cost) / newQty : stock.price;
+    const newCash = cash - cost;
+    const newHoldings = { ...holdings, [id]: { qty: newQty, avgPrice: newAvg } };
+
+    setCash(newCash);
+    setHoldings(newHoldings);
     setTransactions((prev) =>
       [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'buy', stockId: id, stockName: stock.name, qty, price: stock.price, total: cost, pnl: null, time: Date.now() }, ...prev].slice(0, 50)
     );
+
+    if (account) {
+      const holdingsValue = Object.entries(newHoldings).reduce((sum, [aid, h]) => sum + h.qty * (assetsById[aid]?.price || 0), 0);
+      upsertHolding(account.id, id, stock.assetType, newQty, newAvg).catch(() => {});
+      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'buy', qty, price: stock.price }).catch(() => {});
+      saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
+    }
   };
 
   const handleSell = (id, qty) => {
@@ -1125,21 +1150,43 @@ export default function StockGame() {
     if (!cur || cur.qty < qty) return;
     const proceeds = stock.price * qty;
     const pnl = (stock.price - cur.avgPrice) * qty;
-    setCash((c) => c + proceeds);
-    setHoldings((prev) => {
-      const remaining = cur.qty - qty;
-      const next = { ...prev };
-      if (remaining <= 0) delete next[id];
-      else next[id] = { ...cur, qty: remaining };
-      return next;
-    });
+    const remaining = cur.qty - qty;
+    const newCash = cash + proceeds;
+    const newHoldings = { ...holdings };
+    if (remaining <= 0) delete newHoldings[id];
+    else newHoldings[id] = { ...cur, qty: remaining };
+
+    setCash(newCash);
+    setHoldings(newHoldings);
     setTransactions((prev) =>
       [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'sell', stockId: id, stockName: stock.name, qty, price: stock.price, total: proceeds, pnl, time: Date.now() }, ...prev].slice(0, 50)
     );
+
+    if (account) {
+      const holdingsValue = Object.entries(newHoldings).reduce((sum, [aid, h]) => sum + h.qty * (assetsById[aid]?.price || 0), 0);
+      upsertHolding(account.id, id, stock.assetType, remaining, cur.avgPrice).catch(() => {});
+      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'sell', qty, price: stock.price }).catch(() => {});
+      saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
+    }
   };
 
   if (!account) return <LoginScreen onAuthed={setAccount} />;
-  if (!started) return <WelcomeScreen onStart={() => setStarted(true)} nickname={account.nickname} onLogout={handleLogout} />;
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-sm w-full text-center">
+          <p className="font-inter text-sm text-red-500 mb-4">{loadError}</p>
+          <button
+            onClick={() => { setLoadError(''); setDataLoaded(false); }}
+            className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-7 py-3.5 hover:opacity-90 transition-opacity"
+          >
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!started || !dataLoaded) return <LoadingScreen />;
 
   const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
   const netWorth = cash + holdingsValue;

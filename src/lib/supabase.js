@@ -60,3 +60,71 @@ export function getStoredAccount() {
 function setStoredAccount(account) {
   localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(account));
 }
+
+// ---------------------------------------------------------------------
+// Portfolio persistence (holdings / transactions / portfolio_snapshots).
+// Mirrors whatever the client sends since there's no real auth session —
+// see the note above about accounts/RLS.
+// ---------------------------------------------------------------------
+
+export async function fetchPortfolio(userId) {
+  const [{ data: snap, error: snapErr }, { data: holdingsRows, error: hErr }, { data: txRows, error: tErr }] = await Promise.all([
+    supabase.from('portfolio_snapshots').select('cash, net_worth').eq('user_id', userId).maybeSingle(),
+    supabase.from('holdings').select('asset_id, asset_type, qty, avg_price').eq('user_id', userId),
+    supabase.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50),
+  ]);
+  if (snapErr) throw snapErr;
+  if (hErr) throw hErr;
+  if (tErr) throw tErr;
+
+  const holdings = {};
+  (holdingsRows || []).forEach((r) => {
+    holdings[r.asset_id] = { qty: Number(r.qty), avgPrice: Number(r.avg_price) };
+  });
+
+  const transactions = (txRows || []).map((r) => ({
+    id: r.id,
+    type: r.side,
+    stockId: r.symbol,
+    stockName: r.symbol,
+    qty: Number(r.qty),
+    price: Number(r.price),
+    total: Number(r.qty) * Number(r.price),
+    pnl: null,
+    time: new Date(r.created_at).getTime(),
+  }));
+
+  return {
+    isNew: !snap,
+    cash: snap ? Number(snap.cash) : null,
+    holdings,
+    transactions,
+  };
+}
+
+export async function saveSnapshot(userId, cash, netWorth) {
+  const { error } = await supabase
+    .from('portfolio_snapshots')
+    .upsert({ user_id: userId, cash, net_worth: netWorth, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+export async function upsertHolding(userId, assetId, assetType, qty, avgPrice) {
+  if (qty <= 0) {
+    const { error } = await supabase.from('holdings').delete().eq('user_id', userId).eq('asset_id', assetId);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase
+    .from('holdings')
+    .upsert(
+      { user_id: userId, asset_id: assetId, asset_type: assetType, qty, avg_price: avgPrice, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,asset_id' }
+    );
+  if (error) throw error;
+}
+
+export async function insertTransaction(userId, { symbol, assetType, side, qty, price }) {
+  const { error } = await supabase.from('transactions').insert({ user_id: userId, symbol, asset_type: assetType, side, qty, price });
+  if (error) throw error;
+}
