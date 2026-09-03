@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount } from './lib/supabase';
+import { usePumpPortalCoins } from './lib/pumpportal';
 
 /* ---------------------------------------------------------------- */
 /*  종목 데이터                                                       */
@@ -110,6 +111,14 @@ const SECTOR_CORRELATION_MAX = 0.45;
 
 const USD_FORMATTER = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n) => USD_FORMATTER.format(n);
+// Coin prices can be tiny fractions of a cent (pump.fun tokens), where fmt()
+// would just show "$0.00". Show enough significant digits to be readable.
+const fmtCoinPrice = (n) => {
+  if (!n) return '$0.00';
+  if (n >= 0.01) return fmt(n);
+  const decimals = Math.min(10, Math.max(2, Math.ceil(-Math.log10(n)) + 3));
+  return `$${n.toFixed(decimals)}`;
+};
 const clampPrice = (p) => Math.max(0.1, p);
 
 function timeAgo(ts, now) {
@@ -469,13 +478,175 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
 /* ---------------------------------------------------------------- */
 /*  마켓 탭 — 세로 카드 피드 (poesi feed 이식)                            */
 /* ---------------------------------------------------------------- */
-function MarketTab({ stocks, holdings, cash, onBuy, onSell, onOpenDetail }) {
+const MARKET_FILTERS = [
+  { id: 'all', label: '전체' },
+  { id: 'stock', label: '주식' },
+  { id: 'coin', label: '코인' },
+];
+
+const SORT_OPTIONS = [
+  { id: 'default', label: '기본순' },
+  { id: 'mcap_desc', label: '시총 높은순' },
+  { id: 'change_desc', label: '등락률 높은순' },
+  { id: 'change_asc', label: '등락률 낮은순' },
+  { id: 'price_desc', label: '가격 높은순' },
+  { id: 'price_asc', label: '가격 낮은순' },
+  { id: 'name', label: '이름순' },
+];
+
+function changePct(asset) {
+  if (!asset.open) return 0;
+  return ((asset.price - asset.open) / asset.open) * 100;
+}
+
+function MarketTab({ stocks, coins, holdings, cash, onBuy, onSell, onOpenDetail }) {
+  const [filter, setFilter] = useState('all');
+  const [sortKey, setSortKey] = useState('default');
+
+  const assets = useMemo(() => {
+    let list = [...stocks, ...coins];
+    if (filter !== 'all') list = list.filter((a) => a.assetType === filter);
+
+    switch (sortKey) {
+      case 'mcap_desc': return [...list].sort((a, b) => (b.marketCapSol || 0) - (a.marketCapSol || 0));
+      case 'change_desc': return [...list].sort((a, b) => changePct(b) - changePct(a));
+      case 'change_asc': return [...list].sort((a, b) => changePct(a) - changePct(b));
+      case 'price_desc': return [...list].sort((a, b) => b.price - a.price);
+      case 'price_asc': return [...list].sort((a, b) => a.price - b.price);
+      case 'name': return [...list].sort((a, b) => a.name.localeCompare(b.name));
+      default: return list;
+    }
+  }, [stocks, coins, filter, sortKey]);
+
   return (
-    <div className="flex flex-col gap-10">
-      {stocks.map((s, i) => (
-        <StockCard key={s.id} index={i} stock={s} holding={holdings[s.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
-      ))}
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-7">
+        <div className="flex gap-1.5">
+          {MARKET_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => {
+                setFilter(f.id);
+                if (f.id === 'coin' && sortKey === 'default') setSortKey('mcap_desc');
+              }}
+              className="font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+              style={filter === f.id
+                ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
+                : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+          className="font-inter text-xs text-gray-500 bg-transparent border border-gray-200 rounded-full px-3 py-1.5 outline-none"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.id} value={o.id}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {assets.length === 0 ? (
+        <div className="font-inter text-sm text-gray-300 py-10 text-center">
+          {filter === 'coin' ? '실시간 코인 데이터를 불러오는 중이에요...' : '표시할 종목이 없어요.'}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-10">
+          {assets.map((a, i) => (
+            a.assetType === 'coin'
+              ? <CoinCard key={a.id} index={i} coin={a} holding={holdings[a.id]} cash={cash} onBuy={onBuy} onSell={onSell} />
+              : <StockCard key={a.id} index={i} stock={a} holding={holdings[a.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/*  코인 카드 (pump.fun, PumpPortal 실시간)                              */
+/* ---------------------------------------------------------------- */
+const COIN_BUY_AMOUNTS = [10, 50, 100, 500];
+const COIN_SELL_PCTS = [25, 50, 100];
+
+function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
+  const change = changePct(coin);
+  const dirColor = coin.dir === 'down' ? 'var(--down)' : coin.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
+  const dirArrow = coin.dir === 'down' ? '▼' : coin.dir === 'up' ? '▲' : '–';
+  const marketCapUsd = coin.marketCapSol * (coin.priceSol ? coin.price / coin.priceSol : 0);
+
+  return (
+    <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
+      <div className="flex justify-between items-start gap-4 mb-2">
+        <div>
+          <h2 className="font-myeongjo font-bold text-lg mb-2">{coin.name}</h2>
+          <span
+            className="sector-tag inline-block font-inter font-medium text-xs px-3 py-1 rounded-full"
+            style={{ background: '#8A6D4E22', color: '#8A6D4E' }}
+          >
+            ${coin.symbol}
+          </span>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="font-inter font-bold text-lg tabular-nums">{fmtCoinPrice(coin.price)}</div>
+          <div className="font-inter text-xs font-semibold tabular-nums mt-1" style={{ color: dirColor }}>
+            {dirArrow} {Math.abs(change).toFixed(2)}%
+          </div>
+        </div>
+      </div>
+
+      <p className="font-inter text-xs text-gray-400 mb-4">
+        시총 {marketCapUsd > 0 ? fmt(marketCapUsd) : '-'} · pump.fun
+      </p>
+
+      <div className="mb-5">
+        <Sparkline history={coin.history} positive={coin.dir !== 'down'} w={320} h={44} />
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="font-inter text-xs text-gray-400">
+          {holding ? (
+            <>
+              {holding.qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}개 · 평단 {fmtCoinPrice(holding.avgPrice)}
+            </>
+          ) : (
+            '미보유'
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {COIN_BUY_AMOUNTS.map((usd) => {
+            const canBuy = cash >= usd;
+            const qty = coin.price > 0 ? usd / coin.price : 0;
+            return (
+              <button
+                key={usd}
+                onClick={() => onBuy(coin.id, qty)}
+                disabled={!canBuy || qty <= 0}
+                className="pill-btn pill-btn-primary font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-3 py-2 disabled:opacity-30"
+              >
+                ${usd}
+              </button>
+            );
+          })}
+          {COIN_SELL_PCTS.map((pct) => {
+            const sellQty = holding ? holding.qty * (pct / 100) : 0;
+            return (
+              <button
+                key={pct}
+                onClick={() => onSell(coin.id, sellQty)}
+                disabled={!holding || sellQty <= 0}
+                className="pill-btn font-inter font-medium text-xs border border-gray-200 rounded-full px-3 py-2 disabled:opacity-30"
+              >
+                {pct}% 매도
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -559,12 +730,12 @@ function TransactionsSection({ transactions }) {
   );
 }
 
-function DashboardTab({ cash, holdings, stockById, netWorthHistory, unlockedIds, transactions }) {
+function DashboardTab({ cash, holdings, assetById, netWorthHistory, unlockedIds, transactions }) {
   const holdingsList = Object.entries(holdings).map(([id, h]) => {
-    const stock = stockById[id];
+    const stock = assetById[id];
     const value = h.qty * stock.price;
     const pnl = value - h.qty * h.avgPrice;
-    return { id, name: stock.name, sector: stock.sector, qty: h.qty, avgPrice: h.avgPrice, price: stock.price, value, pnl };
+    return { id, name: stock.name, sector: stock.sector || (stock.assetType === 'coin' ? '코인' : ''), qty: h.qty, avgPrice: h.avgPrice, price: stock.price, value, pnl, isCoin: stock.assetType === 'coin' };
   });
   const holdingsValue = holdingsList.reduce((s, h) => s + h.value, 0);
   const netWorth = cash + holdingsValue;
@@ -614,7 +785,7 @@ function DashboardTab({ cash, holdings, stockById, netWorthHistory, unlockedIds,
                 <div className="font-semibold text-sm">{h.name}</div>
                 <div className="text-[11px] text-gray-400 mt-0.5">{h.sector}</div>
               </div>
-              <div className="text-right text-sm tabular-nums">{h.qty}주</div>
+              <div className="text-right text-sm tabular-nums">{h.isCoin ? h.qty.toLocaleString('en-US', { maximumFractionDigits: 0 }) : h.qty}{h.isCoin ? '개' : '주'}</div>
               <div className="text-right text-sm tabular-nums">{fmt(h.value)}</div>
               <div className="text-right text-sm font-semibold tabular-nums" style={{ color: h.pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
                 {h.pnl >= 0 ? '+' : ''}{fmt(h.pnl)}
@@ -803,7 +974,8 @@ export default function StockGame() {
   const [account, setAccount] = useState(() => getStoredAccount());
   const [started, setStarted] = useState(false);
   const [tab, setTab] = useState('market');
-  const [stocks, setStocks] = useState(() => INITIAL_STOCKS.map((s) => ({ ...s, open: s.price, history: [s.price], dir: 'flat' })));
+  const [stocks, setStocks] = useState(() => INITIAL_STOCKS.map((s) => ({ ...s, assetType: 'stock', open: s.price, history: [s.price], dir: 'flat' })));
+  const coins = usePumpPortalCoins();
   const [cash, setCash] = useState(STARTING_CASH);
   const [holdings, setHoldings] = useState({});
   const [netWorthHistory, setNetWorthHistory] = useState([STARTING_CASH]);
@@ -836,6 +1008,7 @@ export default function StockGame() {
   };
 
   const stockById = useMemo(() => Object.fromEntries(stocks.map((s) => [s.id, s])), [stocks]);
+  const assetsById = useMemo(() => Object.fromEntries([...stocks, ...coins].map((a) => [a.id, a])), [stocks, coins]);
   const newsedStockIds = useMemo(() => {
     const set = new Set();
     news.forEach((n) => {
@@ -906,14 +1079,14 @@ export default function StockGame() {
 
   useEffect(() => {
     if (!started) return;
-    const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (stockById[id]?.price || 0), 0);
+    const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
     setNetWorthHistory((prev) => [...prev, cash + holdingsValue].slice(-60));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks]);
 
   useEffect(() => {
     if (!started) return;
-    const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (stockById[id]?.price || 0), 0);
+    const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
     const ctx = { transactions, holdings, netWorth: cash + holdingsValue, newsedStockIds };
     const newlyUnlocked = ACHIEVEMENTS.filter((a) => !unlockedIds.has(a.id) && a.check(ctx));
     if (newlyUnlocked.length === 0) return;
@@ -931,7 +1104,7 @@ export default function StockGame() {
   }, [transactions, holdings, cash, stocks, newsedStockIds, started]);
 
   const handleBuy = (id, qty) => {
-    const stock = stockById[id];
+    const stock = assetsById[id];
     const cost = stock.price * qty;
     if (cash < cost) return;
     setCash((c) => c - cost);
@@ -947,7 +1120,7 @@ export default function StockGame() {
   };
 
   const handleSell = (id, qty) => {
-    const stock = stockById[id];
+    const stock = assetsById[id];
     const cur = holdings[id];
     if (!cur || cur.qty < qty) return;
     const proceeds = stock.price * qty;
@@ -968,7 +1141,7 @@ export default function StockGame() {
   if (!account) return <LoginScreen onAuthed={setAccount} />;
   if (!started) return <WelcomeScreen onStart={() => setStarted(true)} nickname={account.nickname} onLogout={handleLogout} />;
 
-  const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (stockById[id]?.price || 0), 0);
+  const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
   const netWorth = cash + holdingsValue;
   const detailStock = detailId ? stockById[detailId] : null;
 
@@ -1011,14 +1184,14 @@ export default function StockGame() {
         {/* 컨텐츠 */}
         <div key={tab} className="view active">
           {tab === 'market' && (
-            <MarketTab stocks={stocks} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
+            <MarketTab stocks={stocks} coins={coins} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
           )}
           {tab === 'news' && <NewsTab news={news} />}
           {tab === 'dashboard' && (
             <DashboardTab
               cash={cash}
               holdings={holdings}
-              stockById={stockById}
+              assetById={assetsById}
               netWorthHistory={netWorthHistory}
               unlockedIds={unlockedIds}
               transactions={transactions}
