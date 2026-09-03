@@ -1,78 +1,79 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut } from 'lucide-react';
+import { signUp, signIn, signOut, getStoredAccount } from './lib/supabase';
 
 /* ---------------------------------------------------------------- */
 /*  종목 데이터                                                       */
 /* ---------------------------------------------------------------- */
 const INITIAL_STOCKS = [
   {
-    id: 'nrv', name: '노바리버스', sector: '반도체', price: 84200, beta: 1.1,
+    id: 'nrv', name: '노바리버스', sector: '반도체', price: 84.2, beta: 1.1,
     desc: '차세대 파운드리 공정을 개발하는 반도체 설계사.',
     newsPos: ['3나노 공정 수율 목표치 조기 달성', '글로벌 팹리스와 대규모 위탁생산 계약 체결', '신형 AI 가속 칩 양산 돌입'],
     newsNeg: ['공정 전환 지연으로 출하 일정 차질', '주요 고객사 물량 축소 우려', '희귀가스 수급난에 생산 차질'],
   },
   {
-    id: 'blm', name: '블룸모빌리티', sector: '모빌리티', price: 31500, beta: 1.3,
+    id: 'blm', name: '블룸모빌리티', sector: '모빌리티', price: 31.5, beta: 1.3,
     desc: '도심형 전기 이동수단 공유 플랫폼을 운영.',
     newsPos: ['이용자 수 분기 최대치 경신', '3개 신규 도시 서비스 확대 발표', '배터리 교체형 스테이션 특허 취득'],
     newsNeg: ['주요 도시 규제 강화로 운영 차질', '차량 화재 이슈로 안전성 논란', '경쟁사 저가 프로모션에 점유율 하락'],
   },
   {
-    id: 'ptc', name: '피치테크', sector: '바이오', price: 12800, beta: 1.6,
+    id: 'ptc', name: '피치테크', sector: '바이오', price: 12.8, beta: 1.6,
     desc: '신약 후보물질 임상시험 단계의 바이오 벤처.',
     newsPos: ['임상 2상 유효성 지표 목표치 상회', '글로벌 제약사와 기술이전 협상 개시', '희귀질환 치료제 신속심사 지정'],
     newsNeg: ['임상 3상 일정 6개월 연기', '부작용 사례 보고에 주가 출렁', '경쟁 파이프라인 선두 진입 소식'],
   },
   {
-    id: 'ssn', name: '순설당', sector: '식품', price: 6400, beta: 0.5,
+    id: 'ssn', name: '순설당', sector: '식품', price: 6.4, beta: 0.5,
     desc: '전국 유통망을 가진 제과·제빵 소재 기업.',
     newsPos: ['신제품 라인 편의점 완판 행진', '해외 수출 물량 두 배 증가', '원가 절감형 신공법 도입'],
     newsNeg: ['원당 국제가격 급등으로 마진 축소', '이물질 혼입 논란으로 리콜', '주요 거래처 계약 해지'],
   },
   {
-    id: 'krx', name: '코어렉스', sector: '소재', price: 152000, beta: 0.9,
+    id: 'krx', name: '코어렉스', sector: '소재', price: 152, beta: 0.9,
     desc: '2차전지용 특수 소재를 생산하는 화학사.',
     newsPos: ['완성차 업체와 장기 공급계약 체결', '차세대 소재 특허 등록 완료', '증설 공장 조기 가동 성공'],
     newsNeg: ['환경 규제 위반으로 조업 정지 명령', '원재료 가격 급등에 수익성 악화', '경쟁사 대체 소재 개발 소식'],
   },
   {
-    id: 'won', name: '원웨이브', sector: '엔터', price: 22300, beta: 1.4,
+    id: 'won', name: '원웨이브', sector: '엔터', price: 22.3, beta: 1.4,
     desc: '음원 유통과 아티스트 매니지먼트를 겸하는 엔터사.',
     newsPos: ['소속 아티스트 글로벌 차트 1위', '월드투어 전석 매진 행진', '신규 레이블 설립으로 라인업 확대'],
     newsNeg: ['소속 아티스트 활동 중단 발표', '경영권 분쟁설에 주가 급락', '해외 진출 프로젝트 무산'],
   },
   {
-    id: 'grf', name: '그린포레스트', sector: '신재생에너지', price: 18700, beta: 1.2,
+    id: 'grf', name: '그린포레스트', sector: '신재생에너지', price: 18.7, beta: 1.2,
     desc: '태양광·풍력 발전 설비를 개발하는 에너지 기업.',
     newsPos: ['대규모 해상풍력 사업 우선협상자 선정', '정부 신재생에너지 보조금 확대 수혜', '해외 발전소 준공 완료'],
     newsNeg: ['보조금 정책 축소 발표', '발전 설비 결함으로 가동 중단', '인허가 지연으로 사업 표류'],
   },
   {
-    id: 'dlg', name: '딥로직시스템', sector: 'AI·소프트웨어', price: 96500, beta: 1.5,
+    id: 'dlg', name: '딥로직시스템', sector: 'AI·소프트웨어', price: 96.5, beta: 1.5,
     desc: '기업용 AI 자동화 솔루션을 개발하는 소프트웨어사.',
     newsPos: ['대기업 그룹 전사 도입 계약 체결', '자체 언어모델 성능 벤치마크 1위', '해외 데이터센터 신규 구축'],
     newsNeg: ['핵심 개발 인력 대거 이탈', '보안 취약점 발견으로 신뢰도 타격', '주요 고객사 도입 계약 파기'],
   },
   {
-    id: 'sky', name: '스카이포트', sector: '항공·우주', price: 61200, beta: 1.7,
+    id: 'sky', name: '스카이포트', sector: '항공·우주', price: 61.2, beta: 1.7,
     desc: '소형 위성 발사 서비스를 제공하는 우주 스타트업.',
     newsPos: ['상업 위성 발사 100회 무사고 달성', '정부 우주개발 사업 수주', '재사용 발사체 시험 성공'],
     newsNeg: ['발사체 시험 중 폭발 사고', '발사 일정 대거 연기', '주요 고객사 계약 취소'],
   },
   {
-    id: 'csg', name: '캐슬게임즈', sector: '게임', price: 27800, beta: 1.3,
+    id: 'csg', name: '캐슬게임즈', sector: '게임', price: 27.8, beta: 1.3,
     desc: 'MMORPG와 e스포츠 리그를 운영하는 게임사.',
     newsPos: ['신작 출시 첫날 매출 신기록', '자사 리그 시청자 수 역대 최다', '해외 퍼블리싱 계약 체결'],
     newsNeg: ['신작 서버 오류로 환불 요구 쇄도', '핵심 개발진 경쟁사 이적', '확률형 아이템 규제 강화 발표'],
   },
   {
-    id: 'rvr', name: '리버사이드리테일', sector: '유통', price: 9200, beta: 0.6,
+    id: 'rvr', name: '리버사이드리테일', sector: '유통', price: 9.2, beta: 0.6,
     desc: '전국 오프라인 매장과 물류망을 갖춘 종합 유통사.',
     newsPos: ['연휴 매출 전년 대비 큰 폭 증가', '신규 물류센터 가동으로 배송 효율 개선', '자체 브랜드 상품 매출 호조'],
     newsNeg: ['온라인 경쟁 심화로 오프라인 매출 부진', '물류센터 화재로 일부 가동 중단', '최저임금 인상에 인건비 부담 증가'],
   },
   {
-    id: 'cbm', name: '코발트마인', sector: '광업·원자재', price: 43900, beta: 1.0,
+    id: 'cbm', name: '코발트마인', sector: '광업·원자재', price: 43.9, beta: 1.0,
     desc: '2차전지 원료용 희귀금속을 채굴하는 자원개발사.',
     newsPos: ['신규 광산 매장량 예상치 상회', '국제 원자재 가격 급등 수혜', '장기 원료 공급계약 체결'],
     newsNeg: ['채굴 현장 안전사고 발생', '해당국 자원 국유화 추진 소식', '원자재 가격 급락으로 수익성 우려'],
@@ -97,7 +98,7 @@ const SECTOR_COLORS = {
 
 const TICK_MS = 7000;
 const HISTORY_LEN = 40;
-const STARTING_CASH = 10_000_000;
+const STARTING_CASH = 10_000;
 
 const NEWS_INTERVAL_MIN = 45000;
 const NEWS_INTERVAL_MAX = 75000;
@@ -107,8 +108,9 @@ const NEWS_FEED_LIMIT = 30;
 const SECTOR_CORRELATION_MIN = 0.25;
 const SECTOR_CORRELATION_MAX = 0.45;
 
-const fmt = (n) => Math.round(n).toLocaleString('ko-KR');
-const clampPrice = (p) => Math.max(100, p);
+const USD_FORMATTER = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (n) => USD_FORMATTER.format(n);
+const clampPrice = (p) => Math.max(0.1, p);
 
 function timeAgo(ts, now) {
   const sec = Math.max(0, Math.floor((now - ts) / 1000));
@@ -132,7 +134,7 @@ const ACHIEVEMENTS = [
   { id: 'first_buy', title: '첫 매수', desc: '아무 종목이나 처음으로 매수해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'buy') },
   { id: 'first_profit_sell', title: '첫 익절', desc: '수익을 남기고 매도에 성공해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl > 0) },
   { id: 'diversify5', title: '분산투자', desc: '서로 다른 5개 종목을 동시에 보유해보세요.', check: (ctx) => Object.keys(ctx.holdings).length >= 5 },
-  { id: 'big_win', title: '대박 거래', desc: '한 번의 매도로 50만 원 이상 수익을 실현해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl >= 500000) },
+  { id: 'big_win', title: '대박 거래', desc: '한 번의 매도로 $500 이상 수익을 실현해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl >= 500) },
   { id: 'double_asset', title: '자산 2배', desc: '총자산을 시작 자금의 2배로 불려보세요.', check: (ctx) => ctx.netWorth >= STARTING_CASH * 2 },
   { id: 'news_trader', title: '정보력 승부', desc: '뉴스가 떴던 종목을 매매해보세요.', check: (ctx) => ctx.transactions.some((t) => ctx.newsedStockIds.has(t.stockId)) },
 ];
@@ -193,16 +195,99 @@ function QtyStepper({ value, onChange, max }) {
 }
 
 /* ---------------------------------------------------------------- */
+/*  로그인 화면                                                        */
+/* ---------------------------------------------------------------- */
+function LoginScreen({ onAuthed }) {
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const account = mode === 'signup'
+        ? await signUp(username, password, nickname)
+        : await signIn(username, password);
+      onAuthed(account);
+    } catch (err) {
+      setError(err.message || '문제가 발생했어요. 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="max-w-sm w-full">
+        <div className="text-center mb-10">
+          <p className="font-inter font-medium text-xs tracking-wide text-gray-400 mb-3">VIRTUAL STOCK MARKET</p>
+          <h1 className="font-myeongjo font-extrabold text-4xl">모의투자</h1>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            required
+            autoCapitalize="none"
+            placeholder="아이디 (영문 소문자/숫자/밑줄 3~20자)"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 font-inter text-sm outline-none focus:border-gray-400 transition-colors"
+          />
+          <input
+            type="password"
+            required
+            minLength={6}
+            placeholder="비밀번호 (6자 이상)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 font-inter text-sm outline-none focus:border-gray-400 transition-colors"
+          />
+          {mode === 'signup' && (
+            <input
+              type="text"
+              placeholder="닉네임 (선택, 비우면 아이디 사용)"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 font-inter text-sm outline-none focus:border-gray-400 transition-colors"
+            />
+          )}
+          {error && <p className="font-inter text-xs text-red-500 px-1">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-7 py-3.5 hover:opacity-90 transition-opacity disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+          >
+            {loading ? '처리 중...' : mode === 'signup' ? '가입하기' : '로그인'} <ChevronRight size={16} />
+          </button>
+        </form>
+        <button
+          onClick={() => { setMode(mode === 'signup' ? 'signin' : 'signup'); setError(''); }}
+          className="w-full text-center font-inter text-xs text-gray-400 hover:text-gray-600 mt-5 transition-colors"
+        >
+          {mode === 'signup' ? '이미 계정이 있으신가요? 로그인' : '계정이 없으신가요? 가입하기'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /*  환영 화면                                                          */
 /* ---------------------------------------------------------------- */
-function WelcomeScreen({ onStart }) {
+function WelcomeScreen({ onStart, nickname, onLogout }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-sm w-full text-center">
         <p className="font-inter font-medium text-xs tracking-wide text-gray-400 mb-3">VIRTUAL STOCK MARKET</p>
         <h1 className="font-myeongjo font-extrabold text-4xl mb-5">모의투자</h1>
         <p className="font-inter text-sm text-gray-500 leading-7 mb-10">
-          {fmt(STARTING_CASH)}원의 시드머니로 시작해서<br />
+          {nickname && <>{nickname}님, 환영합니다.<br /></>}
+          {fmt(STARTING_CASH)}의 시드머니로 시작해서<br />
           실시간으로 움직이는 12개 종목을 사고팔며 자산을 불려보세요.
         </p>
         <button
@@ -211,6 +296,14 @@ function WelcomeScreen({ onStart }) {
         >
           투자 시작하기 <ChevronRight size={16} />
         </button>
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="block mx-auto mt-6 font-inter text-xs text-gray-300 hover:text-gray-500 transition-colors"
+          >
+            로그아웃
+          </button>
+        )}
       </div>
     </div>
   );
@@ -325,7 +418,7 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
         <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
 
         <div className="flex items-baseline gap-2 mb-1">
-          <span className="font-inter font-bold text-2xl tabular-nums">{fmt(stock.price)}원</span>
+          <span className="font-inter font-bold text-2xl tabular-nums">{fmt(stock.price)}</span>
           <span className="font-inter text-xs font-semibold" style={{ color: dirColor }}>
             {dirArrow} {Math.abs(change).toFixed(2)}%
           </span>
@@ -367,7 +460,7 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
             <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
           </div>
         </div>
-        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">주문금액 {fmt(cost)}원</div>
+        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">주문금액 {fmt(cost)}</div>
       </div>
     </div>
   );
@@ -484,12 +577,12 @@ function DashboardTab({ cash, holdings, stockById, netWorthHistory, unlockedIds,
       <div className="flex gap-8 flex-wrap mb-6">
         <div>
           <p className="font-inter text-xs text-gray-400 mb-1">총자산</p>
-          <div className="font-inter font-bold text-2xl tabular-nums">{fmt(netWorth)}원</div>
+          <div className="font-inter font-bold text-2xl tabular-nums">{fmt(netWorth)}</div>
         </div>
         <div>
           <p className="font-inter text-xs text-gray-400 mb-1">누적 수익</p>
           <div className="font-inter font-bold text-2xl tabular-nums" style={{ color: positive ? 'var(--up)' : 'var(--down)' }}>
-            {positive ? '+' : ''}{fmt(totalReturn)}원 <span className="text-sm">({positive ? '+' : ''}{totalReturnPct.toFixed(2)}%)</span>
+            {positive ? '+' : ''}{fmt(totalReturn)} <span className="text-sm">({positive ? '+' : ''}{totalReturnPct.toFixed(2)}%)</span>
           </div>
         </div>
       </div>
@@ -502,11 +595,11 @@ function DashboardTab({ cash, holdings, stockById, netWorthHistory, unlockedIds,
       <div className="flex gap-8 mb-4 font-inter">
         <div>
           <p className="text-xs text-gray-400 mb-1">현금</p>
-          <div className="font-semibold text-sm tabular-nums">{fmt(cash)}원</div>
+          <div className="font-semibold text-sm tabular-nums">{fmt(cash)}</div>
         </div>
         <div>
           <p className="text-xs text-gray-400 mb-1">보유 종목 평가액</p>
-          <div className="font-semibold text-sm tabular-nums">{fmt(holdingsValue)}원</div>
+          <div className="font-semibold text-sm tabular-nums">{fmt(holdingsValue)}</div>
         </div>
       </div>
 
@@ -707,6 +800,7 @@ function Tabbar({ tab, setTab }) {
 const TAB_TITLES = { market: '마켓', news: '뉴스', dashboard: '대시보드' };
 
 export default function StockGame() {
+  const [account, setAccount] = useState(() => getStoredAccount());
   const [started, setStarted] = useState(false);
   const [tab, setTab] = useState('market');
   const [stocks, setStocks] = useState(() => INITIAL_STOCKS.map((s) => ({ ...s, open: s.price, history: [s.price], dir: 'flat' })));
@@ -723,6 +817,12 @@ export default function StockGame() {
     if (saved) return saved === 'dark';
     return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+
+  const handleLogout = () => {
+    signOut();
+    setAccount(null);
+    setStarted(false);
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -865,7 +965,8 @@ export default function StockGame() {
     );
   };
 
-  if (!started) return <WelcomeScreen onStart={() => setStarted(true)} />;
+  if (!account) return <LoginScreen onAuthed={setAccount} />;
+  if (!started) return <WelcomeScreen onStart={() => setStarted(true)} nickname={account.nickname} onLogout={handleLogout} />;
 
   const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (stockById[id]?.price || 0), 0);
   const netWorth = cash + holdingsValue;
@@ -896,6 +997,13 @@ export default function StockGame() {
               className="w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 transition-colors"
             >
               {dark ? <Sun key="sun" id="theme-icon" className="spin" size={18} /> : <Moon key="moon" id="theme-icon" className="spin" size={18} />}
+            </button>
+            <button
+              aria-label="로그아웃"
+              onClick={handleLogout}
+              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <LogOut size={18} />
             </button>
           </div>
         </header>
