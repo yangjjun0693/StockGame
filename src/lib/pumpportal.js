@@ -28,11 +28,25 @@ function bondingCurvePriceSol(vSol, vTokens) {
 async function fetchSolUsd() {
   try {
     const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+    if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
     const data = await res.json();
     const rate = data?.solana?.usd;
-    return typeof rate === 'number' ? rate : null;
-  } catch {
-    return null;
+    if (typeof rate !== 'number') throw new Error('CoinGecko returned no rate');
+    return rate;
+  } catch (err) {
+    // Same free-tier flakiness as coingecko.js (rate limit responses come
+    // back with no CORS header, so the browser reports it as a CORS
+    // failure). Fall back to a different key-less, CORS-enabled API.
+    console.warn('[SOL/USD] CoinGecko failed, falling back to CryptoCompare', err);
+    try {
+      const res = await fetch('https://min-api.cryptocompare.com/data/price?fsym=SOL&tsyms=USD');
+      if (!res.ok) throw new Error(`CryptoCompare ${res.status}`);
+      const data = await res.json();
+      return typeof data?.USD === 'number' ? data.USD : null;
+    } catch (err2) {
+      console.warn('[SOL/USD] CryptoCompare fallback also failed', err2);
+      return null;
+    }
   }
 }
 

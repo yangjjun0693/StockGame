@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 're
 import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
 import { usePumpPortalCoins } from './lib/pumpportal';
+import { useMajorCoins } from './lib/coingecko';
 
 /* ---------------------------------------------------------------- */
 /*  종목 데이터                                                       */
@@ -481,6 +482,18 @@ function changePct(asset) {
   return ((asset.price - asset.open) / asset.open) * 100;
 }
 
+function sortAssets(list, sortKey) {
+  switch (sortKey) {
+    case 'mcap_desc': return [...list].sort((a, b) => (b.marketCapUsd ?? b.marketCapSol ?? 0) - (a.marketCapUsd ?? a.marketCapSol ?? 0));
+    case 'change_desc': return [...list].sort((a, b) => changePct(b) - changePct(a));
+    case 'change_asc': return [...list].sort((a, b) => changePct(a) - changePct(b));
+    case 'price_desc': return [...list].sort((a, b) => b.price - a.price);
+    case 'price_asc': return [...list].sort((a, b) => a.price - b.price);
+    case 'name': return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    default: return list;
+  }
+}
+
 function MarketTab({ stocks, coins, holdings, cash, onBuy, onSell, onOpenDetail }) {
   const [filter, setFilter] = useState('all');
   const [sortKey, setSortKey] = useState('default');
@@ -489,15 +502,12 @@ function MarketTab({ stocks, coins, holdings, cash, onBuy, onSell, onOpenDetail 
     let list = [...stocks, ...coins];
     if (filter !== 'all') list = list.filter((a) => a.assetType === filter);
 
-    switch (sortKey) {
-      case 'mcap_desc': return [...list].sort((a, b) => (b.marketCapSol || 0) - (a.marketCapSol || 0));
-      case 'change_desc': return [...list].sort((a, b) => changePct(b) - changePct(a));
-      case 'change_asc': return [...list].sort((a, b) => changePct(a) - changePct(b));
-      case 'price_desc': return [...list].sort((a, b) => b.price - a.price);
-      case 'price_asc': return [...list].sort((a, b) => a.price - b.price);
-      case 'name': return [...list].sort((a, b) => a.name.localeCompare(b.name));
-      default: return list;
-    }
+    // BTC/ETH/SOL (CoinGecko "major" tier) are always pinned above meme
+    // coins and stocks, regardless of the chosen sort — only their
+    // relative order (and the rest's) is affected by sortKey.
+    const majors = list.filter((a) => a.tier === 'major');
+    const rest = list.filter((a) => a.tier !== 'major');
+    return [...sortAssets(majors, sortKey), ...sortAssets(rest, sortKey)];
   }, [stocks, coins, filter, sortKey]);
 
   return (
@@ -558,7 +568,10 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
   const change = changePct(coin);
   const dirColor = coin.dir === 'down' ? 'var(--down)' : coin.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = coin.dir === 'down' ? '▼' : coin.dir === 'up' ? '▲' : '–';
-  const marketCapUsd = coin.marketCapSol * (coin.priceSol ? coin.price / coin.priceSol : 0);
+  const isMajor = coin.tier === 'major';
+  const marketCapUsd = isMajor
+    ? coin.marketCapUsd
+    : coin.marketCapSol * (coin.priceSol ? coin.price / coin.priceSol : 0);
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -581,7 +594,7 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
       </div>
 
       <p className="font-inter text-xs text-gray-400 mb-4">
-        시총 {marketCapUsd > 0 ? fmt(marketCapUsd) : '-'} · pump.fun
+        시총 {marketCapUsd > 0 ? fmt(marketCapUsd) : '-'} · {isMajor ? 'CoinGecko' : 'pump.fun'}
       </p>
 
       <div className="mb-5">
@@ -959,7 +972,9 @@ export default function StockGame() {
   const [loadError, setLoadError] = useState('');
   const [tab, setTab] = useState('market');
   const [stocks, setStocks] = useState(() => INITIAL_STOCKS.map((s) => ({ ...s, assetType: 'stock', open: s.price, history: [s.price], dir: 'flat' })));
-  const coins = usePumpPortalCoins();
+  const memeCoins = usePumpPortalCoins();
+  const majorCoins = useMajorCoins();
+  const coins = useMemo(() => [...majorCoins, ...memeCoins], [majorCoins, memeCoins]);
   const [cash, setCash] = useState(STARTING_CASH);
   const [holdings, setHoldings] = useState({});
   const [netWorthHistory, setNetWorthHistory] = useState([STARTING_CASH]);
