@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { TrendingUp, LayoutDashboard, Newspaper, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Newspaper, Users, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
 import { usePumpPortalCoins } from './lib/pumpportal';
 import { useMajorCoins } from './lib/coingecko';
+import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
 
 /* ---------------------------------------------------------------- */
 /*  종목 데이터                                                       */
@@ -854,11 +855,370 @@ function AchievementToastStack({ toasts }) {
 }
 
 /* ---------------------------------------------------------------- */
+/*  커뮤니티 탭 — 포럼 + 랭킹 (Supabase)                                   */
+/* ---------------------------------------------------------------- */
+const COMMUNITY_SUBTABS = [
+  { id: 'forum', label: '포럼' },
+  { id: 'ranking', label: '랭킹' },
+];
+
+function timeAgoAbs(iso, now) {
+  return timeAgo(new Date(iso).getTime(), now);
+}
+
+function ForumComposer({ onSubmit, onCancel, submitting }) {
+  const [category, setCategory] = useState('general');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim() || !content.trim()) return;
+    onSubmit({ category, title: title.trim(), content: content.trim() });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-gray-50 rounded-xl p-4 mb-6 space-y-2.5">
+      <select
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        className="font-inter text-xs text-gray-500 bg-white border border-gray-200 rounded-full px-3 py-1.5 outline-none"
+      >
+        {FORUM_CATEGORIES.filter((c) => c.id !== 'all').map((c) => (
+          <option key={c.id} value={c.id}>{c.label}</option>
+        ))}
+      </select>
+      <input
+        type="text"
+        required
+        placeholder="제목"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 font-inter text-sm outline-none focus:border-gray-400 transition-colors bg-white"
+      />
+      <textarea
+        required
+        rows={4}
+        placeholder="내용을 입력하세요"
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 font-inter text-sm outline-none focus:border-gray-400 transition-colors resize-none bg-white"
+      />
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onCancel} className="font-inter font-medium text-xs text-gray-400 hover:text-gray-600 rounded-full px-4 py-2 transition-colors">취소</button>
+        <button type="submit" disabled={submitting} className="font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-50">
+          {submitting ? '등록 중...' : '등록'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function PostDetailModal({ post, account, onClose, onDeleted }) {
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [liked, setLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(post.likes_count);
+  const [commentText, setCommentText] = useState('');
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cs, likedIds] = await Promise.all([
+          fetchComments(post.id),
+          fetchLikedPostIds(account?.id, [post.id]),
+        ]);
+        if (cancelled) return;
+        setComments(cs);
+        setLiked(likedIds.has(post.id));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [post.id, account?.id]);
+
+  const handleLike = async () => {
+    if (!account) return;
+    const nowLiked = await toggleLike(post.id, account.id);
+    setLiked(nowLiked);
+    setLikesCount((n) => n + (nowLiked ? 1 : -1));
+  };
+
+  const handleComment = async (e) => {
+    e.preventDefault();
+    if (!commentText.trim() || !account) return;
+    setPosting(true);
+    try {
+      const c = await addComment(post.id, account.id, commentText.trim());
+      setComments((prev) => [...prev, c]);
+      setCommentText('');
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('이 글을 삭제할까요?')) return;
+    await deletePost(post.id);
+    onDeleted(post.id);
+    onClose();
+  };
+
+  const isOwner = account && account.id === post.user_id;
+  const now = Date.now();
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
+      <div className="modal-backdrop absolute inset-0 bg-black/20 backdrop-blur-sm" />
+      <div onClick={(e) => e.stopPropagation()} className="modal-box relative bg-white w-full max-w-sm rounded-2xl p-7 shadow-xl max-h-[85vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors">
+          <X size={18} />
+        </button>
+
+        <p className="font-inter font-medium text-xs text-gray-400 mb-1">
+          {FORUM_CATEGORIES.find((c) => c.id === post.category)?.label || post.category} · {post.nickname}
+        </p>
+        <h2 className="font-myeongjo font-bold text-xl mb-3 pr-6">{post.title}</h2>
+        <p className="font-inter text-sm text-gray-600 leading-6 mb-5 whitespace-pre-wrap">{post.content}</p>
+
+        <div className="flex items-center gap-3 mb-5">
+          <button
+            onClick={handleLike}
+            disabled={!account}
+            className="inline-flex items-center gap-1.5 font-inter font-medium text-xs px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+            style={liked ? { background: 'var(--down-bg)', color: 'var(--down)', borderColor: 'transparent' } : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
+          >
+            <Heart size={13} fill={liked ? 'currentColor' : 'none'} /> {likesCount}
+          </button>
+          <span className="font-inter text-xs text-gray-400">댓글 {comments.length}</span>
+          <span className="font-inter text-[11px] text-gray-300 ml-auto">{timeAgoAbs(post.created_at, now)}</span>
+        </div>
+
+        {isOwner && (
+          <button onClick={handleDelete} className="font-inter text-[11px] text-gray-300 hover:text-red-500 transition-colors mb-4 block">글 삭제</button>
+        )}
+
+        <div className="border-t border-gray-100 pt-4">
+          {loading ? (
+            <p className="font-inter text-xs text-gray-300 text-center py-4">불러오는 중...</p>
+          ) : comments.length === 0 ? (
+            <p className="font-inter text-xs text-gray-300 text-center py-4">첫 댓글을 남겨보세요.</p>
+          ) : (
+            <div className="space-y-3 mb-4">
+              {comments.map((c) => (
+                <div key={c.id} className="flex gap-2">
+                  <span className="font-inter font-semibold text-xs shrink-0">{c.nickname}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-inter text-xs text-gray-600 leading-5 whitespace-pre-wrap break-words">{c.content}</p>
+                    <p className="font-inter text-[10px] text-gray-300 mt-0.5">{timeAgoAbs(c.created_at, now)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {account && (
+            <form onSubmit={handleComment} className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="댓글을 입력하세요"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                className="flex-1 px-3.5 py-2 rounded-full border border-gray-200 font-inter text-xs outline-none focus:border-gray-400 transition-colors"
+              />
+              <button type="submit" disabled={posting || !commentText.trim()} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-gray-900 text-white disabled:opacity-30">
+                <Send size={13} />
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ForumSection({ account }) {
+  const [category, setCategory] = useState('all');
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [activePost, setActivePost] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    fetchPosts(category)
+      .then((rows) => { if (!cancelled) setPosts(rows); })
+      .catch((err) => { if (!cancelled) setError(err.message || '게시글을 불러오지 못했어요.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [category]);
+
+  const handleCreate = async (payload) => {
+    if (!account) return;
+    setSubmitting(true);
+    try {
+      const post = await createPost(account.id, payload);
+      if (category === 'all' || category === payload.category) {
+        setPosts((prev) => [post, ...prev]);
+      }
+      setComposerOpen(false);
+    } catch (err) {
+      setError(err.message || '등록에 실패했어요.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleted = (postId) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const now = Date.now();
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
+        <div className="flex gap-1.5">
+          {FORUM_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setCategory(c.id)}
+              className="font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+              style={category === c.id
+                ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
+                : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setComposerOpen((v) => !v)}
+          disabled={!account}
+          className="font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-30"
+        >
+          {composerOpen ? '닫기' : '글쓰기'}
+        </button>
+      </div>
+
+      {composerOpen && (
+        <ForumComposer onSubmit={handleCreate} onCancel={() => setComposerOpen(false)} submitting={submitting} />
+      )}
+
+      {error && <p className="font-inter text-xs text-red-500 mb-4">{error}</p>}
+
+      {loading ? (
+        <p className="font-inter text-sm text-gray-300 py-10 text-center">불러오는 중...</p>
+      ) : posts.length === 0 ? (
+        <p className="font-inter text-sm text-gray-300 py-10 text-center">아직 글이 없어요. 첫 글을 남겨보세요.</p>
+      ) : (
+        <div>
+          {posts.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setActivePost(p)}
+              className="w-full text-left py-4 border-b border-gray-50 hover:bg-gray-50/50 transition-colors -mx-1 px-1 rounded-lg"
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="font-inter font-bold text-[10.5px] px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500">
+                  {FORUM_CATEGORIES.find((c) => c.id === p.category)?.label || p.category}
+                </span>
+                <span className="font-inter text-[11px] text-gray-400">{p.nickname}</span>
+                <span className="font-inter text-[11px] text-gray-300 ml-auto shrink-0">{timeAgoAbs(p.created_at, now)}</span>
+              </div>
+              <div className="font-inter font-semibold text-sm mb-1 truncate">{p.title}</div>
+              <div className="font-inter text-xs text-gray-400 truncate mb-1.5">{p.content}</div>
+              <div className="flex items-center gap-3 font-inter text-[11px] text-gray-400">
+                <span className="inline-flex items-center gap-1"><Heart size={11} /> {p.likes_count}</span>
+                <span className="inline-flex items-center gap-1"><MessageCircle size={11} /> {p.comments_count}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activePost && (
+        <PostDetailModal post={activePost} account={account} onClose={() => setActivePost(null)} onDeleted={handleDeleted} />
+      )}
+    </div>
+  );
+}
+
+function RankingSection({ account }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRanking()
+      .then((data) => { if (!cancelled) setRows(data); })
+      .catch((err) => { if (!cancelled) setError(err.message || '랭킹을 불러오지 못했어요.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <p className="font-inter text-sm text-gray-300 py-10 text-center">불러오는 중...</p>;
+  if (error) return <p className="font-inter text-xs text-red-500 py-6 text-center">{error}</p>;
+  if (rows.length === 0) return <p className="font-inter text-sm text-gray-300 py-10 text-center">아직 랭킹 데이터가 없어요.</p>;
+
+  return (
+    <div>
+      <p className="font-inter text-xs text-gray-400 mb-4">총자산 기준 상위 {rows.length}명이에요.</p>
+      {rows.map((r, i) => {
+        const isMe = account && r.user_id === account.id;
+        return (
+          <div
+            key={r.user_id}
+            className={`grid gap-3 py-3 px-2 -mx-2 rounded-lg items-center${isMe ? ' bg-gray-50' : ' border-b border-gray-50'}`}
+            style={{ gridTemplateColumns: '28px 1fr 1fr' }}
+          >
+            <span className="font-inter font-bold text-sm tabular-nums text-gray-400">{i + 1}</span>
+            <span className="font-inter font-semibold text-sm truncate">{r.nickname}{isMe ? ' (나)' : ''}</span>
+            <span className="font-inter font-semibold text-sm text-right tabular-nums">{fmt(Number(r.net_worth))}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CommunityTab({ account }) {
+  const [sub, setSub] = useState('forum');
+  return (
+    <div>
+      <div className="flex gap-1.5 mb-7">
+        {COMMUNITY_SUBTABS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSub(s.id)}
+            className="font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+            style={sub === s.id
+              ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
+              : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === 'forum' ? <ForumSection account={account} /> : <RankingSection account={account} />}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /*  하단 탭바 (poesi liquid glass tabbar 이식)                           */
 /* ---------------------------------------------------------------- */
 const TABS = [
   { id: 'market', label: '마켓', icon: TrendingUp },
   { id: 'news', label: '뉴스', icon: Newspaper },
+  { id: 'community', label: '커뮤니티', icon: Users },
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
 ];
 
@@ -963,7 +1323,7 @@ function Tabbar({ tab, setTab }) {
 /* ---------------------------------------------------------------- */
 /*  메인 컴포넌트                                                       */
 /* ---------------------------------------------------------------- */
-const TAB_TITLES = { market: '마켓', news: '뉴스', dashboard: '대시보드' };
+const TAB_TITLES = { market: '마켓', news: '뉴스', community: '커뮤니티', dashboard: '대시보드' };
 
 export default function StockGame() {
   const [account, setAccount] = useState(() => getStoredAccount());
@@ -1249,6 +1609,7 @@ export default function StockGame() {
             <MarketTab stocks={stocks} coins={coins} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
           )}
           {tab === 'news' && <NewsTab news={news} />}
+          {tab === 'community' && <CommunityTab account={account} />}
           {tab === 'dashboard' && (
             <DashboardTab
               cash={cash}
