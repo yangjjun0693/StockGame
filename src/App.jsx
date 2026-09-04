@@ -1,89 +1,12 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { TrendingUp, LayoutDashboard, Newspaper, Users, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
-import { usePumpPortalCoins } from './lib/pumpportal';
-import { useMajorCoins } from './lib/coingecko';
+import { useMajorCoins, useMemeCoins } from './lib/coingecko';
+import { useFinnhubStocks } from './lib/finnhub';
+import { useFxRates } from './lib/fx';
 import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
 
-/* ---------------------------------------------------------------- */
-/*  종목 데이터                                                       */
-/* ---------------------------------------------------------------- */
-const INITIAL_STOCKS = [
-  {
-    id: 'nrv', name: '노바리버스', sector: '반도체', price: 84.2, beta: 1.1,
-    desc: '차세대 파운드리 공정을 개발하는 반도체 설계사.',
-    newsPos: ['3나노 공정 수율 목표치 조기 달성', '글로벌 팹리스와 대규모 위탁생산 계약 체결', '신형 AI 가속 칩 양산 돌입'],
-    newsNeg: ['공정 전환 지연으로 출하 일정 차질', '주요 고객사 물량 축소 우려', '희귀가스 수급난에 생산 차질'],
-  },
-  {
-    id: 'blm', name: '블룸모빌리티', sector: '모빌리티', price: 31.5, beta: 1.3,
-    desc: '도심형 전기 이동수단 공유 플랫폼을 운영.',
-    newsPos: ['이용자 수 분기 최대치 경신', '3개 신규 도시 서비스 확대 발표', '배터리 교체형 스테이션 특허 취득'],
-    newsNeg: ['주요 도시 규제 강화로 운영 차질', '차량 화재 이슈로 안전성 논란', '경쟁사 저가 프로모션에 점유율 하락'],
-  },
-  {
-    id: 'ptc', name: '피치테크', sector: '바이오', price: 12.8, beta: 1.6,
-    desc: '신약 후보물질 임상시험 단계의 바이오 벤처.',
-    newsPos: ['임상 2상 유효성 지표 목표치 상회', '글로벌 제약사와 기술이전 협상 개시', '희귀질환 치료제 신속심사 지정'],
-    newsNeg: ['임상 3상 일정 6개월 연기', '부작용 사례 보고에 주가 출렁', '경쟁 파이프라인 선두 진입 소식'],
-  },
-  {
-    id: 'ssn', name: '순설당', sector: '식품', price: 6.4, beta: 0.5,
-    desc: '전국 유통망을 가진 제과·제빵 소재 기업.',
-    newsPos: ['신제품 라인 편의점 완판 행진', '해외 수출 물량 두 배 증가', '원가 절감형 신공법 도입'],
-    newsNeg: ['원당 국제가격 급등으로 마진 축소', '이물질 혼입 논란으로 리콜', '주요 거래처 계약 해지'],
-  },
-  {
-    id: 'krx', name: '코어렉스', sector: '소재', price: 152, beta: 0.9,
-    desc: '2차전지용 특수 소재를 생산하는 화학사.',
-    newsPos: ['완성차 업체와 장기 공급계약 체결', '차세대 소재 특허 등록 완료', '증설 공장 조기 가동 성공'],
-    newsNeg: ['환경 규제 위반으로 조업 정지 명령', '원재료 가격 급등에 수익성 악화', '경쟁사 대체 소재 개발 소식'],
-  },
-  {
-    id: 'won', name: '원웨이브', sector: '엔터', price: 22.3, beta: 1.4,
-    desc: '음원 유통과 아티스트 매니지먼트를 겸하는 엔터사.',
-    newsPos: ['소속 아티스트 글로벌 차트 1위', '월드투어 전석 매진 행진', '신규 레이블 설립으로 라인업 확대'],
-    newsNeg: ['소속 아티스트 활동 중단 발표', '경영권 분쟁설에 주가 급락', '해외 진출 프로젝트 무산'],
-  },
-  {
-    id: 'grf', name: '그린포레스트', sector: '신재생에너지', price: 18.7, beta: 1.2,
-    desc: '태양광·풍력 발전 설비를 개발하는 에너지 기업.',
-    newsPos: ['대규모 해상풍력 사업 우선협상자 선정', '정부 신재생에너지 보조금 확대 수혜', '해외 발전소 준공 완료'],
-    newsNeg: ['보조금 정책 축소 발표', '발전 설비 결함으로 가동 중단', '인허가 지연으로 사업 표류'],
-  },
-  {
-    id: 'dlg', name: '딥로직시스템', sector: 'AI·소프트웨어', price: 96.5, beta: 1.5,
-    desc: '기업용 AI 자동화 솔루션을 개발하는 소프트웨어사.',
-    newsPos: ['대기업 그룹 전사 도입 계약 체결', '자체 언어모델 성능 벤치마크 1위', '해외 데이터센터 신규 구축'],
-    newsNeg: ['핵심 개발 인력 대거 이탈', '보안 취약점 발견으로 신뢰도 타격', '주요 고객사 도입 계약 파기'],
-  },
-  {
-    id: 'sky', name: '스카이포트', sector: '항공·우주', price: 61.2, beta: 1.7,
-    desc: '소형 위성 발사 서비스를 제공하는 우주 스타트업.',
-    newsPos: ['상업 위성 발사 100회 무사고 달성', '정부 우주개발 사업 수주', '재사용 발사체 시험 성공'],
-    newsNeg: ['발사체 시험 중 폭발 사고', '발사 일정 대거 연기', '주요 고객사 계약 취소'],
-  },
-  {
-    id: 'csg', name: '캐슬게임즈', sector: '게임', price: 27.8, beta: 1.3,
-    desc: 'MMORPG와 e스포츠 리그를 운영하는 게임사.',
-    newsPos: ['신작 출시 첫날 매출 신기록', '자사 리그 시청자 수 역대 최다', '해외 퍼블리싱 계약 체결'],
-    newsNeg: ['신작 서버 오류로 환불 요구 쇄도', '핵심 개발진 경쟁사 이적', '확률형 아이템 규제 강화 발표'],
-  },
-  {
-    id: 'rvr', name: '리버사이드리테일', sector: '유통', price: 9.2, beta: 0.6,
-    desc: '전국 오프라인 매장과 물류망을 갖춘 종합 유통사.',
-    newsPos: ['연휴 매출 전년 대비 큰 폭 증가', '신규 물류센터 가동으로 배송 효율 개선', '자체 브랜드 상품 매출 호조'],
-    newsNeg: ['온라인 경쟁 심화로 오프라인 매출 부진', '물류센터 화재로 일부 가동 중단', '최저임금 인상에 인건비 부담 증가'],
-  },
-  {
-    id: 'cbm', name: '코발트마인', sector: '광업·원자재', price: 43.9, beta: 1.0,
-    desc: '2차전지 원료용 희귀금속을 채굴하는 자원개발사.',
-    newsPos: ['신규 광산 매장량 예상치 상회', '국제 원자재 가격 급등 수혜', '장기 원료 공급계약 체결'],
-    newsNeg: ['채굴 현장 안전사고 발생', '해당국 자원 국유화 추진 소식', '원자재 가격 급락으로 수익성 우려'],
-  },
-];
-
-// poesi의 팔레트 태그를 이식한 섹터 컬러
+// poesi의 팔레트 태그를 이식한 섹터 컬러 (실제 종목 12개 + FX 묶음)
 const SECTOR_COLORS = {
   '반도체': '#5B6EF5',
   '모빌리티': '#F2994A',
@@ -97,19 +20,21 @@ const SECTOR_COLORS = {
   '게임': '#D9556B',
   '유통': '#B08968',
   '광업·원자재': '#9C8AA5',
+  '외환': '#4A90D9',
 };
 
-const TICK_MS = 7000;
 const HISTORY_LEN = 40;
 const STARTING_CASH = 10_000;
 
 const NEWS_INTERVAL_MIN = 45000;
 const NEWS_INTERVAL_MAX = 75000;
-const NEWS_IMPACT_MIN = 0.05;
-const NEWS_IMPACT_MAX = 0.14;
 const NEWS_FEED_LIMIT = 30;
-const SECTOR_CORRELATION_MIN = 0.25;
-const SECTOR_CORRELATION_MAX = 0.45;
+
+// 실제 시세는 Finnhub/CoinGecko/PumpPortal에서 오니까, 뉴스 피드는 가격을
+// 직접 움직이지 않는 순수 플레이버 텍스트로만 남겨둠 (실제 뉴스 API 연동은
+// 플랜 8단계에서 별도로).
+const GENERIC_NEWS_POS = ['목표 실적 예상치 상회', '신규 대형 계약 체결 소식', '업계 호평 이어져', '분석가 목표가 상향 조정', '거래량 급증 포착'];
+const GENERIC_NEWS_NEG = ['업황 둔화 우려 확대', '경쟁 심화 이슈 부각', '단기 조정 국면 진입', '차익실현 매물 출회', '거시 리스크 재부각'];
 
 const USD_FORMATTER = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n) => USD_FORMATTER.format(n);
@@ -121,7 +46,6 @@ const fmtCoinPrice = (n) => {
   const decimals = Math.min(10, Math.max(2, Math.ceil(-Math.log10(n)) + 3));
   return `$${n.toFixed(decimals)}`;
 };
-const clampPrice = (p) => Math.max(0.1, p);
 
 function timeAgo(ts, now) {
   const sec = Math.max(0, Math.floor((now - ts) / 1000));
@@ -130,12 +54,6 @@ function timeAgo(ts, now) {
   if (min < 60) return `${min}분 전`;
   const hr = Math.floor(min / 60);
   return `${hr}시간 전`;
-}
-
-function nextPrice(price, beta = 1) {
-  const drift = (Math.random() - 0.5) * 0.024 * beta;
-  const jump = Math.random() > 0.97 ? (Math.random() - 0.5) * 0.08 * beta : 0;
-  return clampPrice(price * (1 + drift + jump));
 }
 
 /* ---------------------------------------------------------------- */
@@ -321,7 +239,10 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
       <div className="flex justify-between items-start gap-4 mb-2 cursor-pointer" onClick={() => onOpenDetail(stock.id)}>
         <div>
-          <h2 className="font-myeongjo font-bold text-lg mb-2">{stock.name}</h2>
+          <h2 className={`font-myeongjo font-bold text-lg ${stock.symbol && stock.symbol !== stock.name ? 'mb-0.5' : 'mb-2'}`}>{stock.name}</h2>
+          {stock.symbol && stock.symbol !== stock.name && (
+            <p className="font-inter font-medium text-xs text-gray-400 mb-2 tracking-wide">{stock.symbol}</p>
+          )}
           <span
             className="sector-tag inline-block font-inter font-medium text-xs px-3 py-1 rounded-full"
             style={{ background: sectorColor + '22', color: sectorColor }}
@@ -407,7 +328,10 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
         </button>
 
         <p className="font-inter font-medium text-xs mb-1" style={{ color: sectorColor }}>{stock.sector}</p>
-        <h2 className="font-myeongjo font-bold text-xl mb-3">{stock.name}</h2>
+        <h2 className={`font-myeongjo font-bold text-xl ${stock.symbol && stock.symbol !== stock.name ? 'mb-0.5' : 'mb-3'}`}>{stock.name}</h2>
+        {stock.symbol && stock.symbol !== stock.name && (
+          <p className="font-inter font-medium text-xs text-gray-400 mb-3 tracking-wide">{stock.symbol}</p>
+        )}
         <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
 
         <div className="flex items-baseline gap-2 mb-1">
@@ -466,6 +390,7 @@ const MARKET_FILTERS = [
   { id: 'all', label: '전체' },
   { id: 'stock', label: '주식' },
   { id: 'coin', label: '코인' },
+  { id: 'fx', label: 'FX' },
 ];
 
 const SORT_OPTIONS = [
@@ -495,12 +420,12 @@ function sortAssets(list, sortKey) {
   }
 }
 
-function MarketTab({ stocks, coins, holdings, cash, onBuy, onSell, onOpenDetail }) {
+function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDetail }) {
   const [filter, setFilter] = useState('all');
   const [sortKey, setSortKey] = useState('default');
 
   const assets = useMemo(() => {
-    let list = [...stocks, ...coins];
+    let list = [...stocks, ...coins, ...fx];
     if (filter !== 'all') list = list.filter((a) => a.assetType === filter);
 
     // BTC/ETH/SOL (CoinGecko "major" tier) are always pinned above meme
@@ -509,7 +434,7 @@ function MarketTab({ stocks, coins, holdings, cash, onBuy, onSell, onOpenDetail 
     const majors = list.filter((a) => a.tier === 'major');
     const rest = list.filter((a) => a.tier !== 'major');
     return [...sortAssets(majors, sortKey), ...sortAssets(rest, sortKey)];
-  }, [stocks, coins, filter, sortKey]);
+  }, [stocks, coins, fx, filter, sortKey]);
 
   return (
     <div>
@@ -560,7 +485,7 @@ function MarketTab({ stocks, coins, holdings, cash, onBuy, onSell, onOpenDetail 
 }
 
 /* ---------------------------------------------------------------- */
-/*  코인 카드 (pump.fun, PumpPortal 실시간)                              */
+/*  코인 카드 (CoinGecko: 메이저 + 유명 밈코인 고정 라인업)                     */
 /* ---------------------------------------------------------------- */
 const COIN_BUY_AMOUNTS = [10, 50, 100, 500];
 const COIN_SELL_PCTS = [25, 50, 100];
@@ -569,10 +494,7 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
   const change = changePct(coin);
   const dirColor = coin.dir === 'down' ? 'var(--down)' : coin.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = coin.dir === 'down' ? '▼' : coin.dir === 'up' ? '▲' : '–';
-  const isMajor = coin.tier === 'major';
-  const marketCapUsd = isMajor
-    ? coin.marketCapUsd
-    : coin.marketCapSol * (coin.priceSol ? coin.price / coin.priceSol : 0);
+  const marketCapUsd = coin.marketCapUsd ?? 0;
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -595,7 +517,7 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
       </div>
 
       <p className="font-inter text-xs text-gray-400 mb-4">
-        시총 {marketCapUsd > 0 ? fmt(marketCapUsd) : '-'} · {isMajor ? 'CoinGecko' : 'pump.fun'}
+        시총 {marketCapUsd > 0 ? fmt(marketCapUsd) : '-'} · CoinGecko
       </p>
 
       <div className="mb-5">
@@ -1331,9 +1253,10 @@ export default function StockGame() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [tab, setTab] = useState('market');
-  const [stocks, setStocks] = useState(() => INITIAL_STOCKS.map((s) => ({ ...s, assetType: 'stock', open: s.price, history: [s.price], dir: 'flat' })));
-  const memeCoins = usePumpPortalCoins();
+  const stocks = useFinnhubStocks();
+  const fx = useFxRates();
   const majorCoins = useMajorCoins();
+  const memeCoins = useMemeCoins();
   const coins = useMemo(() => [...majorCoins, ...memeCoins], [majorCoins, memeCoins]);
   const [cash, setCash] = useState(STARTING_CASH);
   const [holdings, setHoldings] = useState({});
@@ -1399,8 +1322,7 @@ export default function StockGame() {
     setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 400);
   };
 
-  const stockById = useMemo(() => Object.fromEntries(stocks.map((s) => [s.id, s])), [stocks]);
-  const assetsById = useMemo(() => Object.fromEntries([...stocks, ...coins].map((a) => [a.id, a])), [stocks, coins]);
+  const assetsById = useMemo(() => Object.fromEntries([...stocks, ...coins, ...fx].map((a) => [a.id, a])), [stocks, coins, fx]);
   const newsedStockIds = useMemo(() => {
     const set = new Set();
     news.forEach((n) => {
@@ -1410,20 +1332,13 @@ export default function StockGame() {
     return set;
   }, [news]);
 
+  // 실시간 시세는 Finnhub/CoinGecko/PumpPortal 훅이 각자 폴링/스트리밍으로
+  // 갱신하니, 뉴스 스케줄러는 가격을 건드리지 않고 플레이버 헤드라인만 생성.
+  // ref로 최신 종목 리스트를 들고 있어서 타이머가 매 폴링마다 재시작되지 않음.
+  const newsAssetsRef = useRef([]);
   useEffect(() => {
-    if (!started) return;
-    const timer = setInterval(() => {
-      setStocks((prev) =>
-        prev.map((s) => {
-          const price = nextPrice(s.price, s.beta);
-          const dir = price > s.price ? 'up' : price < s.price ? 'down' : s.dir;
-          const history = [...s.history, price].slice(-HISTORY_LEN);
-          return { ...s, price, dir, history };
-        })
-      );
-    }, TICK_MS);
-    return () => clearInterval(timer);
-  }, [started]);
+    newsAssetsRef.current = [...stocks, ...fx];
+  }, [stocks, fx]);
 
   useEffect(() => {
     if (!started) return;
@@ -1431,37 +1346,16 @@ export default function StockGame() {
     const scheduleNext = () => {
       const delay = NEWS_INTERVAL_MIN + Math.random() * (NEWS_INTERVAL_MAX - NEWS_INTERVAL_MIN);
       timeoutId = setTimeout(() => {
-        setStocks((prev) => {
-          const idx = Math.floor(Math.random() * prev.length);
-          const stock = prev[idx];
+        const pool = newsAssetsRef.current;
+        if (pool.length > 0) {
+          const asset = pool[Math.floor(Math.random() * pool.length)];
           const positive = Math.random() < 0.5;
-          const headlines = positive ? stock.newsPos : stock.newsNeg;
+          const headlines = positive ? GENERIC_NEWS_POS : GENERIC_NEWS_NEG;
           const headline = headlines[Math.floor(Math.random() * headlines.length)];
-          const rawImpact = NEWS_IMPACT_MIN + Math.random() * (NEWS_IMPACT_MAX - NEWS_IMPACT_MIN);
-          const impactPct = Math.min(0.25, rawImpact * stock.beta);
-          const price = clampPrice(stock.price * (1 + (positive ? impactPct : -impactPct)));
-          const dir = price > stock.price ? 'up' : price < stock.price ? 'down' : stock.dir;
-          const history = [...stock.history, price].slice(-HISTORY_LEN);
-
-          const updated = [...prev];
-          updated[idx] = { ...stock, price, dir, history };
-
-          const affected = [];
-          updated.forEach((s, i) => {
-            if (i === idx || s.sector !== stock.sector) return;
-            const corrImpact = impactPct * (SECTOR_CORRELATION_MIN + Math.random() * (SECTOR_CORRELATION_MAX - SECTOR_CORRELATION_MIN));
-            const corrPrice = clampPrice(s.price * (1 + (positive ? corrImpact : -corrImpact)));
-            const corrDir = corrPrice > s.price ? 'up' : corrPrice < s.price ? 'down' : s.dir;
-            const corrHistory = [...s.history, corrPrice].slice(-HISTORY_LEN);
-            updated[i] = { ...s, price: corrPrice, dir: corrDir, history: corrHistory };
-            affected.push({ stockId: s.id, stockName: s.name, impactPct: corrImpact });
-          });
-
           setNews((prevNews) =>
-            [{ id: `${stock.id}-${Date.now()}`, stockId: stock.id, stockName: stock.name, headline, positive, impactPct, affected, time: Date.now() }, ...prevNews].slice(0, NEWS_FEED_LIMIT)
+            [{ id: `${asset.id}-${Date.now()}`, stockId: asset.id, stockName: asset.name, headline, positive, time: Date.now() }, ...prevNews].slice(0, NEWS_FEED_LIMIT)
           );
-          return updated;
-        });
+        }
         scheduleNext();
       }, delay);
     };
@@ -1565,7 +1459,7 @@ export default function StockGame() {
 
   const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
   const netWorth = cash + holdingsValue;
-  const detailStock = detailId ? stockById[detailId] : null;
+  const detailStock = detailId ? assetsById[detailId] : null;
 
   return (
     <div className="min-h-screen">
@@ -1606,7 +1500,7 @@ export default function StockGame() {
         {/* 컨텐츠 */}
         <div key={tab} className="view active">
           {tab === 'market' && (
-            <MarketTab stocks={stocks} coins={coins} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
+            <MarketTab stocks={stocks} coins={coins} fx={fx} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
           )}
           {tab === 'news' && <NewsTab news={news} />}
           {tab === 'community' && <CommunityTab account={account} />}
