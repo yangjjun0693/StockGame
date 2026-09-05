@@ -740,7 +740,6 @@ function NewsTab({ articles }) {
 
   return (
     <div>
-      <p className="font-inter text-xs text-gray-400 mb-4 leading-relaxed">주식·크립토 시장 실시간 뉴스</p>
       {articles.map((a) => (
         <a
           key={a.link}
