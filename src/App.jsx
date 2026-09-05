@@ -4,7 +4,7 @@ import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
 import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
 import { useFxRates } from './lib/fx';
-import { useCryptoNews } from './lib/cryptoNews';
+import { useCryptoNews } from './lib/cryptonews';
 import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
 
 // poesi의 팔레트 태그를 이식한 섹터 컬러 (실제 종목 12개 + FX 묶음)
