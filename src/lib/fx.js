@@ -26,9 +26,9 @@ export const CURATED_FX = [
   { id: 'eurusd', code: 'EUR', name: 'EUR/USD', symbol: 'EUR/USD', sector: '외환', invert: true },
   { id: 'gbpusd', code: 'GBP', name: 'GBP/USD', symbol: 'GBP/USD', sector: '외환', invert: true },
   { id: 'audusd', code: 'AUD', name: 'AUD/USD', symbol: 'AUD/USD', sector: '외환', invert: true },
-  { id: 'jpyusd', code: 'JPY', name: 'JPY/USD', symbol: 'USD/JPY', sector: '외환', invert: true },
-  { id: 'krwusd', code: 'KRW', name: 'KRW/USD', symbol: 'USD/KRW', sector: '외환', invert: true },
-  { id: 'chfusd', code: 'CHF', name: 'CHF/USD', symbol: 'USD/CHF', sector: '외환', invert: true },
+  { id: 'jpyusd', code: 'JPY', name: 'JPY/USD', symbol: 'JPY/USD', sector: '외환', invert: true },
+  { id: 'krwusd', code: 'KRW', name: 'KRW/USD', symbol: 'KRW/USD', sector: '외환', invert: true },
+  { id: 'chfusd', code: 'CHF', name: 'CHF/USD', symbol: 'CHF/USD', sector: '외환', invert: true },
 ];
 
 async function fetchRates() {

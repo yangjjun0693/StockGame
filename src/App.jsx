@@ -251,7 +251,7 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
           </span>
         </div>
         <div className="text-right shrink-0">
-          <div key={Math.round(stock.price)} className="price-flash font-inter font-bold text-lg tabular-nums">{fmt(stock.price)}</div>
+          <div key={stock.price} className="price-flash font-inter font-bold text-lg tabular-nums">{fmtCoinPrice(stock.price)}</div>
           <div className="font-inter text-xs font-semibold tabular-nums mt-1" style={{ color: dirColor }}>
             {dirArrow} {Math.abs(change).toFixed(2)}%
           </div>
@@ -335,7 +335,7 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
         <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
 
         <div className="flex items-baseline gap-2 mb-1">
-          <span className="font-inter font-bold text-2xl tabular-nums">{fmt(stock.price)}</span>
+          <span className="font-inter font-bold text-2xl tabular-nums">{fmtCoinPrice(stock.price)}</span>
           <span className="font-inter text-xs font-semibold" style={{ color: dirColor }}>
             {dirArrow} {Math.abs(change).toFixed(2)}%
           </span>
