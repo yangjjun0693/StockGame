@@ -2,8 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 're
 import { TrendingUp, LayoutDashboard, Newspaper, Users, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
-import { useFinnhubStocks } from './lib/finnhub';
+import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
 import { useFxRates } from './lib/fx';
+import { useCryptoNews } from './lib/cryptoNews';
 import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
 
 // poesi의 팔레트 태그를 이식한 섹터 컬러 (실제 종목 12개 + FX 묶음)
@@ -26,15 +27,6 @@ const SECTOR_COLORS = {
 const HISTORY_LEN = 40;
 const STARTING_CASH = 10_000;
 
-const NEWS_INTERVAL_MIN = 45000;
-const NEWS_INTERVAL_MAX = 75000;
-const NEWS_FEED_LIMIT = 30;
-
-// 실제 시세는 Finnhub/CoinGecko/PumpPortal에서 오니까, 뉴스 피드는 가격을
-// 직접 움직이지 않는 순수 플레이버 텍스트로만 남겨둠 (실제 뉴스 API 연동은
-// 플랜 8단계에서 별도로).
-const GENERIC_NEWS_POS = ['목표 실적 예상치 상회', '신규 대형 계약 체결 소식', '업계 호평 이어져', '분석가 목표가 상향 조정', '거래량 급증 포착'];
-const GENERIC_NEWS_NEG = ['업황 둔화 우려 확대', '경쟁 심화 이슈 부각', '단기 조정 국면 진입', '차익실현 매물 출회', '거시 리스크 재부각'];
 
 const USD_FORMATTER = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n) => USD_FORMATTER.format(n);
@@ -65,7 +57,6 @@ const ACHIEVEMENTS = [
   { id: 'diversify5', title: '분산투자', desc: '서로 다른 5개 종목을 동시에 보유해보세요.', check: (ctx) => Object.keys(ctx.holdings).length >= 5 },
   { id: 'big_win', title: '대박 거래', desc: '한 번의 매도로 $500 이상 수익을 실현해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl >= 500) },
   { id: 'double_asset', title: '자산 2배', desc: '총자산을 시작 자금의 2배로 불려보세요.', check: (ctx) => ctx.netWorth >= STARTING_CASH * 2 },
-  { id: 'news_trader', title: '정보력 승부', desc: '뉴스가 떴던 종목을 매매해보세요.', check: (ctx) => ctx.transactions.some((t) => ctx.newsedStockIds.has(t.stockId)) },
 ];
 
 /* ---------------------------------------------------------------- */
@@ -735,7 +726,7 @@ function DashboardTab({ cash, holdings, assetById, netWorthHistory, unlockedIds,
 /* ---------------------------------------------------------------- */
 /*  뉴스 탭                                                            */
 /* ---------------------------------------------------------------- */
-function NewsTab({ news }) {
+function NewsTab({ articles }) {
   const [, forceTick] = useState(0);
 
   useEffect(() => {
@@ -743,27 +734,32 @@ function NewsTab({ news }) {
     return () => clearInterval(t);
   }, []);
 
-  if (news.length === 0) {
-    return <div className="font-inter text-sm text-gray-300 py-10 text-center">아직 발생한 뉴스가 없어요. 잠시 기다려보세요.</div>;
+  if (articles.length === 0) {
+    return <div className="font-inter text-sm text-gray-300 py-10 text-center">뉴스를 불러오는 중이에요...</div>;
   }
 
   return (
     <div>
-      <p className="font-inter text-xs text-gray-400 mb-4 leading-relaxed">어떤 종목 이야기인지는 알려주지 않아요. 마켓에서 직접 찾아보세요.</p>
-      {news.map((n) => (
-        <div key={n.id} className="flex gap-3 py-3.5 border-b border-gray-50">
-          <div className="shrink-0 w-1.5 h-1.5 rounded-full mt-1.5" style={{ background: n.positive ? 'var(--up)' : 'var(--down)' }} />
+      <p className="font-inter text-xs text-gray-400 mb-4 leading-relaxed">주식·크립토 시장 실시간 뉴스</p>
+      {articles.map((a) => (
+        <a
+          key={a.link}
+          href={a.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex gap-3 py-3.5 border-b border-gray-50 hover:opacity-70 transition-opacity"
+        >
           <div className="flex-1 min-w-0">
-            <span
-              className="inline-block font-inter font-bold text-[10.5px] px-1.5 py-0.5 rounded-md mb-1"
-              style={n.positive ? { background: 'var(--up-bg)', color: 'var(--up)' } : { background: 'var(--down-bg)', color: 'var(--down)' }}
-            >
-              {n.positive ? '호재' : '악재'}
+            <span className="inline-block font-inter font-bold text-[10.5px] px-1.5 py-0.5 rounded-md mb-1 bg-gray-100 text-gray-500">
+              {a.symbol ? `${a.symbol} · ${a.source}` : a.source}
             </span>
-            <div className="font-inter text-sm leading-relaxed">{n.headline}</div>
+            <div className="font-inter text-sm font-semibold leading-relaxed">{a.title}</div>
+            {a.description && (
+              <div className="font-inter text-xs text-gray-400 leading-relaxed mt-1 line-clamp-2">{a.description}</div>
+            )}
           </div>
-          <div className="shrink-0 text-[11px] text-gray-400 whitespace-nowrap">{timeAgo(n.time, Date.now())}</div>
-        </div>
+          <div className="shrink-0 text-[11px] text-gray-400 whitespace-nowrap">{timeAgo(new Date(a.pubDate).getTime(), Date.now())}</div>
+        </a>
       ))}
     </div>
   );
@@ -1275,7 +1271,12 @@ export default function StockGame() {
   const [holdings, setHoldings] = useState({});
   const [netWorthHistory, setNetWorthHistory] = useState([STARTING_CASH]);
   const [detailId, setDetailId] = useState(null);
-  const [news, setNews] = useState([]);
+  const cryptoNews = useCryptoNews(20);
+  const stockNews = useFinnhubNews(20);
+  const news = useMemo(
+    () => [...cryptoNews, ...stockNews].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate)).slice(0, 30),
+    [cryptoNews, stockNews]
+  );
   const [transactions, setTransactions] = useState([]);
   const [unlockedIds, setUnlockedIds] = useState(() => new Set());
   const [toasts, setToasts] = useState([]);
@@ -1336,45 +1337,6 @@ export default function StockGame() {
   };
 
   const assetsById = useMemo(() => Object.fromEntries([...stocks, ...coins, ...fx].map((a) => [a.id, a])), [stocks, coins, fx]);
-  const newsedStockIds = useMemo(() => {
-    const set = new Set();
-    news.forEach((n) => {
-      set.add(n.stockId);
-      (n.affected || []).forEach((a) => set.add(a.stockId));
-    });
-    return set;
-  }, [news]);
-
-  // 실시간 시세는 Finnhub/CoinGecko/PumpPortal 훅이 각자 폴링/스트리밍으로
-  // 갱신하니, 뉴스 스케줄러는 가격을 건드리지 않고 플레이버 헤드라인만 생성.
-  // ref로 최신 종목 리스트를 들고 있어서 타이머가 매 폴링마다 재시작되지 않음.
-  const newsAssetsRef = useRef([]);
-  useEffect(() => {
-    newsAssetsRef.current = [...stocks, ...fx];
-  }, [stocks, fx]);
-
-  useEffect(() => {
-    if (!started) return;
-    let timeoutId;
-    const scheduleNext = () => {
-      const delay = NEWS_INTERVAL_MIN + Math.random() * (NEWS_INTERVAL_MAX - NEWS_INTERVAL_MIN);
-      timeoutId = setTimeout(() => {
-        const pool = newsAssetsRef.current;
-        if (pool.length > 0) {
-          const asset = pool[Math.floor(Math.random() * pool.length)];
-          const positive = Math.random() < 0.5;
-          const headlines = positive ? GENERIC_NEWS_POS : GENERIC_NEWS_NEG;
-          const headline = headlines[Math.floor(Math.random() * headlines.length)];
-          setNews((prevNews) =>
-            [{ id: `${asset.id}-${Date.now()}`, stockId: asset.id, stockName: asset.name, headline, positive, time: Date.now() }, ...prevNews].slice(0, NEWS_FEED_LIMIT)
-          );
-        }
-        scheduleNext();
-      }, delay);
-    };
-    scheduleNext();
-    return () => clearTimeout(timeoutId);
-  }, [started]);
 
   useEffect(() => {
     if (!started) return;
@@ -1386,7 +1348,7 @@ export default function StockGame() {
   useEffect(() => {
     if (!started) return;
     const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
-    const ctx = { transactions, holdings, netWorth: cash + holdingsValue, newsedStockIds };
+    const ctx = { transactions, holdings, netWorth: cash + holdingsValue };
     const newlyUnlocked = ACHIEVEMENTS.filter((a) => !unlockedIds.has(a.id) && a.check(ctx));
     if (newlyUnlocked.length === 0) return;
     setUnlockedIds((prev) => {
@@ -1400,7 +1362,7 @@ export default function StockGame() {
       setTimeout(() => setToasts((prev) => prev.filter((x) => x.key !== t.key)), 4000);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, holdings, cash, stocks, newsedStockIds, started]);
+  }, [transactions, holdings, cash, stocks, started]);
 
   const handleBuy = (id, qty) => {
     const stock = assetsById[id];
@@ -1515,7 +1477,7 @@ export default function StockGame() {
           {tab === 'market' && (
             <MarketTab stocks={stocks} coins={coins} fx={fx} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
           )}
-          {tab === 'news' && <NewsTab news={news} />}
+          {tab === 'news' && <NewsTab articles={news} />}
           {tab === 'community' && <CommunityTab account={account} />}
           {tab === 'dashboard' && (
             <DashboardTab
@@ -1530,7 +1492,20 @@ export default function StockGame() {
         </div>
 
         <footer className="mt-20 pt-6 border-t border-gray-100 text-center">
-          <p className="font-inter font-medium text-xs text-gray-300">모의투자 · 실제 거래가 아닙니다</p>
+          <p className="font-inter font-medium text-xs text-gray-300 mb-3">모의투자 · 실제 거래가 아닙니다</p>
+          <div className="flex items-center justify-center gap-3 font-inter text-xs font-medium text-gray-400">
+            <a href="#" className="hover:text-gray-600 transition-colors">Privacy</a>
+            <span className="text-gray-200">·</span>
+            <a href="#" className="hover:text-gray-600 transition-colors">Terms</a>
+          </div>
+          <a
+            href="https://www.instagram.com/joosik_gg/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block mt-3 font-inter text-xs font-bold tracking-wide text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            INSTAGRAM
+          </a>
         </footer>
       </div>
 

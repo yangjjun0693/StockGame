@@ -12,8 +12,14 @@ import { useEffect, useRef, useState } from 'react';
 // tier — FX is now sourced from Frankfurter instead, see lib/fx.js.
 const FINNHUB_API_KEY = 'dadd2d9r01qtj63osrkgdadd2d9r01qtj63osrl0';
 const FINNHUB_QUOTE_URL = 'https://finnhub.io/api/v1/quote';
+const FINNHUB_NEWS_URL = 'https://finnhub.io/api/v1/company-news';
 const REFRESH_MS = 30 * 1000;
 const MAX_BACKOFF_MS = 3 * 60 * 1000;
+// company-news is one request per symbol (13 curated stocks), so this polls
+// far slower than the per-symbol quote loop above to stay well under
+// Finnhub's free-tier 60 req/min cap once both hooks are running together.
+const NEWS_REFRESH_MS = 5 * 60 * 1000;
+const NEWS_MAX_BACKOFF_MS = 20 * 60 * 1000;
 const HISTORY_LEN = 40; // match the local-sim sparkline length it replaces
 
 // 12 real tickers, one per existing sector bucket so SECTOR_COLORS /
@@ -44,6 +50,73 @@ async function fetchQuote(symbol) {
   // symbol or an exhausted key, rather than a 4xx — treat that as a failure.
   if (!data || (data.c === 0 && data.pc === 0)) throw new Error(`Finnhub: empty quote for ${symbol}`);
   return data; // { c: current, d: change, dp: percent, h, l, o: open, pc: prevClose, t }
+}
+
+function ymd(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchCompanyNews(symbol) {
+  const to = new Date();
+  const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000); // last 7 days
+  const url = `${FINNHUB_NEWS_URL}?symbol=${encodeURIComponent(symbol)}&from=${ymd(from)}&to=${ymd(to)}&token=${FINNHUB_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Finnhub news ${res.status} (${symbol})`);
+  const data = await res.json();
+  if (!Array.isArray(data)) throw new Error(`Finnhub news: bad response for ${symbol}`);
+  return data.map((item) => ({
+    title: item.headline,
+    link: item.url,
+    description: item.summary,
+    pubDate: new Date(item.datetime * 1000).toISOString(),
+    source: item.source,
+    symbol,
+  }));
+}
+
+/**
+ * Polls Finnhub /company-news across the curated stock list and returns a
+ * flat, newest-first article list in the same shape as lib/cryptoNews.js
+ * ({ title, link, description, pubDate, source }, plus `symbol` here).
+ * Slower cadence than useFinnhubStocks (see NEWS_REFRESH_MS) since this is
+ * one request per symbol per poll.
+ */
+export function useFinnhubNews(limit = 30) {
+  const [articles, setArticles] = useState([]);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer = null;
+    let delay = NEWS_REFRESH_MS;
+
+    const tick = async () => {
+      try {
+        const results = await Promise.allSettled(CURATED_STOCKS.map((item) => fetchCompanyNews(item.symbol)));
+        if (stopped) return;
+        const anySuccess = results.some((r) => r.status === 'fulfilled');
+        const merged = results
+          .filter((r) => r.status === 'fulfilled')
+          .flatMap((r) => r.value)
+          .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+          .slice(0, limit);
+        if (merged.length > 0) setArticles(merged);
+        delay = anySuccess ? NEWS_REFRESH_MS : Math.min(delay * 2, NEWS_MAX_BACKOFF_MS);
+      } catch (err) {
+        console.warn('[Finnhub] news poll failed', err);
+        delay = Math.min(delay * 2, NEWS_MAX_BACKOFF_MS);
+      } finally {
+        if (!stopped) timer = setTimeout(tick, delay);
+      }
+    };
+
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [limit]);
+
+  return articles;
 }
 
 /**
