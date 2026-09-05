@@ -649,12 +649,25 @@ function TransactionsSection({ transactions }) {
 }
 
 function DashboardTab({ cash, holdings, assetById, netWorthHistory, unlockedIds, transactions }) {
-  const holdingsList = Object.entries(holdings).map(([id, h]) => {
-    const stock = assetById[id];
-    const value = h.qty * stock.price;
-    const pnl = value - h.qty * h.avgPrice;
-    return { id, name: stock.name, sector: stock.sector || (stock.assetType === 'coin' ? '코인' : ''), qty: h.qty, avgPrice: h.avgPrice, price: stock.price, value, pnl, isCoin: stock.assetType === 'coin' };
-  });
+ const holdingsList = Object.entries(holdings)
+    .map(([id, h]) => {
+      const stock = assetById[id];
+      if (!stock) return null; // skip unknown assets
+      const value = h.qty * stock.price;
+      const pnl = value - h.qty * h.avgPrice;
+      return {
+        id,
+        name: stock.name,
+        sector: stock.sector || (stock.assetType === 'coin' ? '코인' : ''),
+        qty: h.qty,
+        avgPrice: h.avgPrice,
+        price: stock.price,
+        value,
+        pnl,
+        isCoin: stock.assetType === 'coin',
+      };
+    })
+    .filter(Boolean);
   const holdingsValue = holdingsList.reduce((s, h) => s + h.value, 0);
   const netWorth = cash + holdingsValue;
   const totalReturn = netWorth - STARTING_CASH;
