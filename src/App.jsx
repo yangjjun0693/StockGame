@@ -1613,10 +1613,11 @@ function ForumSection({ account }) {
   );
 }
 
-function RankingSection({ account }) {
+function RankingSection({ account, assetsById, achievements }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeUser, setActiveUser] = useState(null); // { userId, nickname }
 
   useEffect(() => {
     let cancelled = false;
@@ -1637,22 +1638,174 @@ function RankingSection({ account }) {
       {rows.map((r, i) => {
         const isMe = account && r.user_id === account.id;
         return (
-          <div
+          <button
             key={r.user_id}
-            className={`grid gap-3 py-3 px-2 -mx-2 rounded-lg items-center${isMe ? ' bg-gray-50' : ' border-b border-gray-50'}`}
+            onClick={() => setActiveUser({ userId: r.user_id, nickname: r.nickname })}
+            className={`w-full grid gap-3 py-3 px-2 -mx-2 rounded-lg items-center text-left transition-colors hover:bg-gray-50${isMe ? ' bg-gray-50' : ' border-b border-gray-50'}`}
             style={{ gridTemplateColumns: '28px 1fr 1fr' }}
           >
             <span className="font-inter font-bold text-sm tabular-nums text-gray-400">{i + 1}</span>
             <span className="font-inter font-semibold text-sm truncate">{r.nickname}{isMe ? ' (나)' : ''}</span>
             <span className="font-inter font-semibold text-sm text-right tabular-nums">{fmt(Number(r.net_worth))}</span>
-          </div>
+          </button>
         );
       })}
+
+      {activeUser && (
+        <UserProfileModal
+          userId={activeUser.userId}
+          nickname={activeUser.nickname}
+          assetsById={assetsById}
+          achievements={achievements}
+          onClose={() => setActiveUser(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CommunityTab({ account }) {
+function UserProfileModal({ userId, nickname, assetsById, achievements, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [portfolio, setPortfolio] = useState(null); // { cash, holdings, transactions }
+  const [unlockedCount, setUnlockedCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [p, unlockedIds] = await Promise.all([
+          fetchPortfolio(userId),
+          fetchUnlockedAchievements(userId).catch(() => new Set()),
+        ]);
+        if (cancelled) return;
+        setPortfolio(p);
+        setUnlockedCount(unlockedIds.size);
+      } catch (err) {
+        if (!cancelled) setError(err.message || '유저 정보를 불러오지 못했어요.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const cash = portfolio?.cash ?? 0;
+  const holdings = portfolio?.holdings || {};
+  const transactions = portfolio?.transactions || [];
+  const holdingsValue = totalHoldingsValue(holdings, assetsById);
+  const netWorth = cash + holdingsValue;
+  const totalPnl = netWorth - STARTING_CASH;
+  const totalPnlPct = (totalPnl / STARTING_CASH) * 100;
+  const positive = totalPnl >= 0;
+
+  const holdingsList = Object.entries(holdings)
+    .map(([id, h]) => {
+      const stock = assetsById[id];
+      if (!stock) return null;
+      const side = h.side || 'long';
+      const leverage = h.leverage || 1;
+      const value = positionMargin(h.avgPrice, leverage, h.qty) + positionPnl(side, h.avgPrice, stock.price, h.qty);
+      const pnl = positionPnl(side, h.avgPrice, stock.price, h.qty);
+      return { id, name: stock.name, qty: h.qty, side, leverage, value, pnl, isCoin: stock.assetType === 'coin' };
+    })
+    .filter(Boolean);
+
+  const recentTransactions = transactions.slice(0, 5);
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
+      <div className="modal-backdrop absolute inset-0 bg-black/20 backdrop-blur-sm" />
+      <div onClick={(e) => e.stopPropagation()} className="modal-box relative bg-white w-full max-w-sm rounded-2xl p-7 shadow-xl max-h-[85vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors">
+          <X size={18} />
+        </button>
+
+        <p className="font-inter font-medium text-xs text-gray-400 mb-1">유저 프로필</p>
+        <h2 className="font-myeongjo font-bold text-xl mb-5 pr-6">{nickname}</h2>
+
+        {loading ? (
+          <p className="font-inter text-sm text-gray-300 py-10 text-center">불러오는 중...</p>
+        ) : error ? (
+          <p className="font-inter text-xs text-red-500 py-6 text-center">{error}</p>
+        ) : (
+          <div className="space-y-6">
+            {/* PnL */}
+            <div>
+              <p className="font-inter text-xs text-gray-400 mb-1">누적 수익</p>
+              <div className="font-inter font-bold text-2xl tabular-nums" style={{ color: positive ? 'var(--up)' : 'var(--down)' }}>
+                {positive ? '+' : ''}{fmt(totalPnl)} <span className="text-sm">({positive ? '+' : ''}{totalPnlPct.toFixed(2)}%)</span>
+              </div>
+              <p className="font-inter text-xs text-gray-400 mt-1">총자산 {fmt(netWorth)}</p>
+            </div>
+
+            {/* Portfolio */}
+            <div>
+              <p className="font-inter font-medium text-xs text-gray-400 mb-2.5">보유 종목 ({holdingsList.length})</p>
+              {holdingsList.length === 0 ? (
+                <p className="font-inter text-sm text-gray-300 py-2">보유 중인 종목이 없어요.</p>
+              ) : (
+                <div>
+                  {holdingsList.map((h) => (
+                    <div key={h.id} className="grid gap-2 py-2 border-b border-gray-50 items-center font-inter" style={{ gridTemplateColumns: '1.4fr 0.8fr 1fr' }}>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-semibold truncate">{h.name}</span>
+                        <span
+                          className="font-inter font-bold text-[10px] px-1.5 py-0.5 rounded-md shrink-0"
+                          style={h.side === 'short' ? { background: 'var(--down-bg)', color: 'var(--down)' } : { background: 'var(--up-bg)', color: 'var(--up)' }}
+                        >
+                          {h.side === 'short' ? 'S' : 'L'}{h.leverage}x
+                        </span>
+                      </div>
+                      <span className="text-right text-xs tabular-nums text-gray-400">
+                        {h.isCoin ? h.qty.toLocaleString('en-US', { maximumFractionDigits: 0 }) : h.qty}{h.isCoin ? '개' : '주'}
+                      </span>
+                      <span className="text-right text-xs font-semibold tabular-nums" style={{ color: h.pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
+                        {h.pnl >= 0 ? '+' : ''}{fmt(h.pnl)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Recent transactions */}
+            <div>
+              <p className="font-inter font-medium text-xs text-gray-400 mb-2.5">최근 거래</p>
+              {recentTransactions.length === 0 ? (
+                <p className="font-inter text-sm text-gray-300 py-2">아직 체결된 거래가 없어요.</p>
+              ) : (
+                <div>
+                  {recentTransactions.map((t) => (
+                    <div key={t.id} className="grid gap-2 py-2 border-b border-gray-50 items-center font-inter" style={{ gridTemplateColumns: '0.6fr 1.2fr 1fr 1fr' }}>
+                      <span
+                        className="font-inter font-bold text-[10px] px-1.5 py-0.5 rounded-md w-fit"
+                        style={t.type === 'buy' ? { background: 'var(--down-bg)', color: 'var(--down)' } : { background: 'var(--up-bg)', color: 'var(--up)' }}
+                      >
+                        {t.type === 'buy' ? '매수' : '매도'}
+                      </span>
+                      <span className="text-xs truncate">{t.stockName}</span>
+                      <span className="text-right text-[11px] tabular-nums text-gray-400">{t.qty} · {fmt(t.price)}</span>
+                      <span className="text-right text-[11px] text-gray-400">{timeAgo(t.time, Date.now())}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Achievements */}
+            <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: 'var(--gray-50, #f9fafb)' }}>
+              <p className="font-inter font-medium text-xs text-gray-400">달성한 도전 과제</p>
+              <p className="font-myeongjo font-bold text-xl tabular-nums shrink-0 ml-3">{unlockedCount}/{achievements.length}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommunityTab({ account, assetsById, achievements }) {
   const [sub, setSub] = useState('forum');
   return (
     <div>
@@ -1670,7 +1823,7 @@ function CommunityTab({ account }) {
           </button>
         ))}
       </div>
-      {sub === 'forum' ? <ForumSection account={account} /> : <RankingSection account={account} />}
+      {sub === 'forum' ? <ForumSection account={account} /> : <RankingSection account={account} assetsById={assetsById} achievements={achievements} />}
     </div>
   );
 }
@@ -2045,7 +2198,7 @@ export default function StockGame() {
             <MarketTab stocks={stocks} coins={coins} fx={fx} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
           )}
           {tab === 'news' && <NewsTab articles={news} />}
-          {tab === 'community' && <CommunityTab account={account} />}
+          {tab === 'community' && <CommunityTab account={account} assetsById={assetsById} achievements={achievements} />}
           {tab === 'achievements' && (
             <AchievementsTab
               achievements={achievements}
