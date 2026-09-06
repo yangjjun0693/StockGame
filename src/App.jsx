@@ -76,6 +76,116 @@ function totalHoldingsValue(holdings, assetsById) {
   }, 0);
 }
 
+/* ---------------------------------------------------------------- */
+/*  TradingView 고급 차트 위젯 (무료 임베드, API 키 불필요)                     */
+/* ---------------------------------------------------------------- */
+// 주식은 알려진 상장 거래소 접두어를 붙여줘야 TradingView가 정확히 못 찾는 경우가
+// 줄어든다. 목록에 없는 티커는 접두어 없이 넘겨서 TradingView 자체 검색에 맡긴다.
+const STOCK_TV_EXCHANGE = {
+  NVDA: 'NASDAQ', TSLA: 'NASDAQ', MRNA: 'NASDAQ', KO: 'NYSE', DIS: 'NYSE',
+  ENPH: 'NASDAQ', MSFT: 'NASDAQ', RKLB: 'NASDAQ', BA: 'NYSE', TTWO: 'NASDAQ',
+  WMT: 'NYSE', FCX: 'NYSE',
+};
+// 실제 외환시장 고시 방향 기준 (JPY/KRW/CHF는 USD가 기준통화)
+const FX_TV_SYMBOL = {
+  EUR: 'FX:EURUSD', GBP: 'FX:GBPUSD', AUD: 'FX:AUDUSD',
+  JPY: 'FX:USDJPY', KRW: 'FX:USDKRW', CHF: 'FX:USDCHF',
+};
+
+function tvSymbolFor(asset) {
+  if (!asset) return null;
+  if (asset.assetType === 'coin') return `BINANCE:${asset.symbol.toUpperCase()}USDT`;
+  if (asset.assetType === 'fx') return FX_TV_SYMBOL[asset.code] || `FX:${asset.symbol?.replace('/', '')}`;
+  const exch = STOCK_TV_EXCHANGE[asset.symbol];
+  return exch ? `${exch}:${asset.symbol}` : asset.symbol;
+}
+
+function ChartModeToggle({ mode, onChange }) {
+  const isTv = mode === 'tv';
+  const segW = 46;
+  return (
+    <div
+      className="relative inline-flex rounded-full p-1 shrink-0"
+      style={{
+        background: 'var(--glass-bg)',
+        border: '1px solid var(--glass-border)',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.3)',
+        backdropFilter: 'blur(16px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+      }}
+    >
+      <div
+        className="absolute top-1 bottom-1 rounded-full pointer-events-none"
+        style={{
+          width: segW,
+          left: 4,
+          background: 'var(--ink)',
+          opacity: 0.9,
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25)',
+          transform: `translateX(${isTv ? segW : 0}px)`,
+          transition: 'transform 0.32s var(--spring)',
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => onChange('simple')}
+        className="relative z-10 font-inter font-bold text-[10px] rounded-full py-1 transition-colors duration-200"
+        style={{ width: segW, color: isTv ? 'var(--ink-faint)' : 'var(--base-bg)' }}
+      >
+        간단
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('tv')}
+        className="relative z-10 font-inter font-bold text-[10px] rounded-full py-1 transition-colors duration-200"
+        style={{ width: segW, color: isTv ? 'var(--base-bg)' : 'var(--ink-faint)' }}
+      >
+        TV
+      </button>
+    </div>
+  );
+}
+
+function TradingViewChart({ symbol, dark, height = 320 }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !symbol) return;
+    container.innerHTML = '';
+    const widgetDiv = document.createElement('div');
+    widgetDiv.className = 'tradingview-widget-container__widget';
+    widgetDiv.style.height = '100%';
+    widgetDiv.style.width = '100%';
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+    script.async = true;
+    script.text = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval: 'D',
+      timezone: 'Etc/UTC',
+      theme: dark ? 'dark' : 'light',
+      style: '1',
+      locale: 'kr',
+      allow_symbol_change: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      save_image: false,
+      calendar: false,
+      support_host: 'https://www.tradingview.com',
+    });
+    container.appendChild(widgetDiv);
+    container.appendChild(script);
+    return () => {
+      container.innerHTML = '';
+    };
+  }, [symbol, dark]);
+
+  return <div ref={containerRef} className="tradingview-widget-container" style={{ height, width: '100%' }} />;
+}
+
 const LEVERAGE_SNAP_POINTS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50];
 const LEVERAGE_MIN = 1;
 // 자산군별 현실적인 레버리지 상한: 주식은 실제 신용거래 수준(4x), FX는 소매 외환 레버리지(20x), 코인은 무기한선물 수준(50x)
@@ -478,11 +588,15 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
 /* ---------------------------------------------------------------- */
 /*  종목 상세 모달 (auth-modal 이식)                                     */
 /* ---------------------------------------------------------------- */
-function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
+function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }) {
   const [qty, setQty] = useState(1);
   const [side, setSide] = useState(holding?.side || 'long');
   const [leverage, setLeverage] = useState(holding?.leverage || 1);
+  const [amount, setAmount] = useState('50');
+  const [chartMode, setChartMode] = useState('simple');
   if (!stock) return null;
+
+  const isCoin = stock.assetType === 'coin';
 
   // 이미 보유 중이면 방향/레버리지는 기존 포지션에 고정 (평단 계산이 꼬이지 않도록)
   const effSide = holding ? holding.side || 'long' : side;
@@ -495,81 +609,161 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
   const sectorColor = SECTOR_COLORS[stock.sector] || '#999999';
   const high = Math.max(...stock.history);
   const low = Math.min(...stock.history);
-  const cost = positionMargin(stock.price, effLeverage, qty);
-  const canBuy = cash >= cost;
+  const leverageMax = LEVERAGE_MAX_BY_TYPE[stock.assetType] || 4;
+
+  // 코인: 증거금 커스텀 입력 기준, 그 외(주식/FX): 수량 스테퍼 기준
+  const marginAmount = Math.max(0, Number(amount) || 0);
+  const coinBuyQty = stock.price > 0 ? (marginAmount * effLeverage) / stock.price : 0;
+  const cost = isCoin ? marginAmount : positionMargin(stock.price, effLeverage, qty);
+  const canBuy = isCoin ? cash >= marginAmount && marginAmount > 0 && coinBuyQty > 0 : cash >= cost;
   const canSell = holding && holding.qty >= qty;
   const pnl = holding ? positionPnl(effSide, holding.avgPrice, stock.price, holding.qty) : 0;
-  const leverageMax = LEVERAGE_MAX_BY_TYPE[stock.assetType] || 4;
+
+  const isTv = chartMode === 'tv';
 
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
       <div className="modal-backdrop absolute inset-0 bg-black/20 backdrop-blur-sm" />
-      <div onClick={(e) => e.stopPropagation()} className="modal-box relative bg-white w-full max-w-sm rounded-2xl p-7 shadow-xl">
-        <button onClick={onClose} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`modal-box relative bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col ${isTv ? 'h-[85vh] p-4 overflow-hidden' : 'max-h-[92vh] p-7 overflow-y-auto'}`}
+      >
+        <button onClick={onClose} className={isTv ? 'absolute top-4 right-4 text-gray-300 hover:text-gray-600 transition-colors z-10' : 'absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors'}>
           <X size={18} />
         </button>
 
-        <p className="font-inter font-medium text-xs mb-1" style={{ color: sectorColor }}>{stock.sector}</p>
-        <h2 className={`font-myeongjo font-bold text-xl ${stock.symbol && stock.symbol !== stock.name ? 'mb-0.5' : 'mb-3'}`}>{stock.name}</h2>
-        {stock.symbol && stock.symbol !== stock.name && (
-          <p className="font-inter font-medium text-xs text-gray-400 mb-3 tracking-wide">{stock.symbol}</p>
-        )}
-        <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
-
-        <div className="flex items-baseline gap-2 mb-1">
-          <span className="font-inter font-bold text-2xl tabular-nums">{fmtCoinPrice(stock.price)}</span>
-          <span className="font-inter text-xs font-semibold" style={{ color: dirColor }}>
-            {dirArrow} {Math.abs(change).toFixed(2)}%
-          </span>
-        </div>
-
-        <div className="my-4 bg-gray-50 rounded-xl p-3">
-          <Sparkline history={stock.history} positive={dirUp} w={330} h={64} strokeWidth={2} showBaseline />
-          <div className="flex justify-between text-[11px] text-gray-400 mt-2 font-inter tabular-nums">
-            <span>최저 {fmt(low)}</span>
-            <span>최고 {fmt(high)}</span>
-          </div>
-        </div>
-
-        <div className="flex gap-6 py-3 border-t border-b border-gray-100 mb-5 font-inter">
-          <div>
-            <div className="text-[11px] text-gray-400 mb-1">보유 수량</div>
-            <div className="text-sm font-semibold">{holding ? `${holding.qty}주` : '없음'}</div>
-          </div>
-          {holding && (
-            <>
-              <div>
-                <div className="text-[11px] text-gray-400 mb-1">평단가</div>
-                <div className="text-sm font-semibold tabular-nums">{fmt(holding.avgPrice)}</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-gray-400 mb-1">방향 · 배율</div>
-                <div className="text-sm font-semibold">{effSide === 'short' ? 'Short' : 'Long'} {effLeverage}x</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-gray-400 mb-1">평가손익</div>
-                <div className="text-sm font-semibold tabular-nums" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
-                  {pnl >= 0 ? '+' : ''}{fmt(pnl)}
-                </div>
-              </div>
-            </>
+        <div
+          style={{
+            maxHeight: isTv ? 0 : 600,
+            opacity: isTv ? 0 : 1,
+            overflow: 'hidden',
+            transition: `max-height 0.4s var(--ease), opacity ${isTv ? '0.15s ease' : '0.3s ease 0.1s'}`,
+          }}
+        >
+          <p className="font-inter font-medium text-xs mb-1" style={{ color: sectorColor }}>{stock.sector}</p>
+          <h2 className={`font-myeongjo font-bold text-xl ${stock.symbol && stock.symbol !== stock.name ? 'mb-0.5' : 'mb-3'}`}>{stock.name}</h2>
+          {stock.symbol && stock.symbol !== stock.name && (
+            <p className="font-inter font-medium text-xs text-gray-400 mb-3 tracking-wide">{stock.symbol}</p>
           )}
+          <p className="font-inter text-sm text-gray-400 leading-6 mb-4">{stock.desc}</p>
+
+          <div className="flex items-baseline gap-2 mb-1">
+            <span className="font-inter font-bold text-2xl tabular-nums">{fmtCoinPrice(stock.price)}</span>
+            <span className="font-inter text-xs font-semibold" style={{ color: dirColor }}>
+              {dirArrow} {Math.abs(change).toFixed(2)}%
+            </span>
+          </div>
         </div>
 
-        {!holding && (
-          <div className="mb-4">
-            <LeverageSlider value={leverage} onChange={setLeverage} max={leverageMax} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+        <div className={`flex justify-center ${isTv ? 'mb-3 shrink-0' : 'my-3'}`} style={{ transition: 'margin 0.4s var(--ease)' }}>
+          <ChartModeToggle mode={chartMode} onChange={setChartMode} />
+        </div>
+
+        {isTv ? (
+          <div
+            className="rounded-xl overflow-hidden flex-1"
+            style={{ background: 'var(--ink-faint)', animation: 'fadeUp 0.45s var(--ease) 0.15s both' }}
+          >
+            <TradingViewChart symbol={tvSymbolFor(stock)} dark={dark} height="100%" />
           </div>
+        ) : (
+          <>
+            <div className="bg-gray-50 rounded-xl p-3 mb-4">
+              <Sparkline history={stock.history} positive={dirUp} w={330} h={64} strokeWidth={2} showBaseline />
+              <div className="flex justify-between text-[11px] text-gray-400 mt-2 font-inter tabular-nums">
+                <span>최저 {fmt(low)}</span>
+                <span>최고 {fmt(high)}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-6 py-3 border-t border-b border-gray-100 mb-5 font-inter">
+              <div>
+                <div className="text-[11px] text-gray-400 mb-1">보유 수량</div>
+                <div className="text-sm font-semibold">{holding ? `${holding.qty}${isCoin ? '개' : '주'}` : '없음'}</div>
+              </div>
+              {holding && (
+                <>
+                  <div>
+                    <div className="text-[11px] text-gray-400 mb-1">평단가</div>
+                    <div className="text-sm font-semibold tabular-nums">{fmt(holding.avgPrice)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-gray-400 mb-1">방향 · 배율</div>
+                    <div className="text-sm font-semibold">{effSide === 'short' ? 'Short' : 'Long'} {effLeverage}x</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-gray-400 mb-1">평가손익</div>
+                    <div className="text-sm font-semibold tabular-nums" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
+                      {pnl >= 0 ? '+' : ''}{fmt(pnl)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {!holding && (
+              <div className="mb-4">
+                <LeverageSlider value={leverage} onChange={setLeverage} max={leverageMax} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+              </div>
+            )}
+
+            {isCoin ? (
+              <>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-inter text-sm text-gray-400">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="증거금"
+                      className="font-inter font-medium text-sm w-24 border border-gray-200 rounded-full px-3 py-2 outline-none tabular-nums"
+                    />
+                    <button
+                      onClick={() => onBuy(stock.id, coinBuyQty, { side, leverage })}
+                      disabled={!canBuy}
+                      className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30"
+                    >
+                      매수
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {COIN_SELL_PCTS.map((pct) => {
+                      const sellQty = holding ? holding.qty * (pct / 100) : 0;
+                      return (
+                        <button
+                          key={pct}
+                          onClick={() => onSell(stock.id, sellQty)}
+                          disabled={!holding || sellQty <= 0}
+                          className="font-inter font-medium text-xs border border-gray-200 rounded-full px-3 py-2 disabled:opacity-30"
+                        >
+                          {pct}% 매도
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {!holding && effLeverage > 1 && (
+                  <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">
+                    명목 {fmt(coinBuyQty * stock.price)} ({coinBuyQty.toLocaleString('en-US', { maximumFractionDigits: 4 })}개)
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <QtyStepper value={qty} onChange={setQty} />
+                  <div className="flex gap-2">
+                    <button onClick={() => onBuy(stock.id, qty, { side, leverage })} disabled={!canBuy} className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
+                    <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
+                  </div>
+                </div>
+                <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">증거금 {fmt(cost)}{effLeverage > 1 ? ` (명목 ${fmt(stock.price * qty)})` : ''}</div>
+              </>
+            )}
+          </>
         )}
-
-        <div className="flex items-center justify-between gap-3">
-          <QtyStepper value={qty} onChange={setQty} />
-          <div className="flex gap-2">
-            <button onClick={() => onBuy(stock.id, qty, { side, leverage })} disabled={!canBuy} className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
-            <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
-          </div>
-        </div>
-        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">증거금 {fmt(cost)}{effLeverage > 1 ? ` (명목 ${fmt(stock.price * qty)})` : ''}</div>
       </div>
     </div>
   );
@@ -667,7 +861,7 @@ function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDet
         <div className="flex flex-col gap-10">
           {assets.map((a, i) => (
             a.assetType === 'coin'
-              ? <CoinCard key={a.id} index={i} coin={a} holding={holdings[a.id]} cash={cash} onBuy={onBuy} onSell={onSell} />
+              ? <CoinCard key={a.id} index={i} coin={a} holding={holdings[a.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
               : <StockCard key={a.id} index={i} stock={a} holding={holdings[a.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
           ))}
         </div>
@@ -681,7 +875,7 @@ function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDet
 /* ---------------------------------------------------------------- */
 const COIN_SELL_PCTS = [25, 50, 100];
 
-function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
+function CoinCard({ coin, index, holding, cash, onBuy, onSell, onOpenDetail }) {
   const [side, setSide] = useState(holding?.side || 'long');
   const [leverage, setLeverage] = useState(holding?.leverage || 1);
   const [amount, setAmount] = useState('50');
@@ -702,7 +896,7 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
-      <div className="flex justify-between items-start gap-4 mb-2">
+      <div className="flex justify-between items-start gap-4 mb-2 cursor-pointer" onClick={() => onOpenDetail?.(coin.id)}>
         <div>
           <h2 className="font-myeongjo font-bold text-lg mb-2">{coin.name}</h2>
           <span
@@ -724,7 +918,7 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
         시총 {marketCapUsd > 0 ? fmt(marketCapUsd) : '-'} · CoinGecko
       </p>
 
-      <div className="mb-5">
+      <div className="mb-5 cursor-pointer" onClick={() => onOpenDetail?.(coin.id)}>
         <Sparkline history={coin.history} positive={coin.dir !== 'down'} w={320} h={44} />
       </div>
 
@@ -1754,6 +1948,7 @@ export default function StockGame() {
           stock={detailStock}
           holding={holdings[detailStock.id]}
           cash={cash}
+          dark={dark}
           onBuy={handleBuy}
           onSell={handleSell}
           onClose={() => setDetailId(null)}

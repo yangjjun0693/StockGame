@@ -1,6 +1,4 @@
-/* ========================================
-   index.css — poesi 디자인 시스템 이식
-   ======================================== */
+/* index.css */
 
 @import "tailwindcss";
 
@@ -57,8 +55,8 @@ html.dark #theme-toggle:hover { background: rgba(255,255,255,0.08); }
 .pill-btn-primary:not(:disabled):hover { box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
 
 @keyframes theme-spin {
-  from { transform: rotate(-100deg) scale(0.4); opacity: 0; }
-  to { transform: rotate(0) scale(1); opacity: 1; }
+  from { transform: rotate(-100deg) scale(0.4); opacity: 0; filter: blur(3px); }
+  to { transform: rotate(0) scale(1); opacity: 1; filter: blur(0); }
 }
 #theme-icon.spin { animation: theme-spin 0.45s var(--spring); }
 
@@ -92,8 +90,8 @@ html.dark .border-gray-200 { border-color: #35353a !important; }
   animation: slide-up 0.6s var(--spring) 0.2s both;
 }
 @keyframes slide-up {
-  from { transform: translateY(80px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translateY(80px); opacity: 0; filter: blur(8px); }
+  to { transform: translateY(0); opacity: 1; filter: blur(0); }
 }
 .tabbar {
   position: relative;
@@ -209,18 +207,18 @@ html.dark .tabbar::after {
 /* ===== View 전환 ===== */
 .view { animation: fadeView 0.25s ease; }
 @keyframes fadeView {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 /* ===== 종목 카드 (poem-card 이식) ===== */
 .stock-card { animation: fadeUp 0.5s ease forwards; transition: transform 0.3s var(--ease); }
 .stock-card:hover { transform: translateY(-3px); }
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(16px); filter: blur(4px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
-@keyframes priceFlash { 0% { opacity: 0.35; } 100% { opacity: 1; } }
+@keyframes priceFlash { 0% { opacity: 0.35; filter: blur(1.5px); } 100% { opacity: 1; filter: blur(0); } }
 .price-flash { animation: priceFlash 0.3s ease-out; }
 
 .sector-tag, .palette-tag { transition: all 0.2s ease; cursor: pointer; }
@@ -231,12 +229,12 @@ html.dark .tabbar::after {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal-box { animation: modalIn 0.35s var(--ease); }
 @keyframes modalIn {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(24px); filter: blur(6px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 /* ===== 토스트 ===== */
-@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); filter: blur(3px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
 .achievement-toast { animation: toastIn 0.25s ease-out; }
 
 /* ===== 입력 ===== */
