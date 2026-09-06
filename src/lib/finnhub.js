@@ -26,19 +26,16 @@ const HISTORY_LEN = 40; // match the local-sim sparkline length it replaces
 // sector filter chips in App.jsx keep working unchanged. `name` is the
 // English company name; `symbol` (the ticker) renders under it in the card.
 export const CURATED_STOCKS = [
-  { id: 'nvda', symbol: 'NVDA', name: 'NVIDIA', sector: '반도체', desc: 'GPU와 AI 가속기를 설계하는 반도체 기업.' },
-  { id: 'tsla', symbol: 'TSLA', name: 'Tesla', sector: '모빌리티', desc: '전기차와 에너지 저장 시스템을 만드는 모빌리티 기업.' },
-  { id: 'mrna', symbol: 'MRNA', name: 'Moderna', sector: '바이오', desc: 'mRNA 기반 백신·치료제를 개발하는 바이오 기업.' },
-  { id: 'ko', symbol: 'KO', name: 'Coca-Cola', sector: '식품', desc: '전세계 음료 브랜드를 보유한 식품·음료 기업.' },
-  { id: 'dis', symbol: 'DIS', name: 'Disney', sector: '엔터', desc: '영화·스트리밍·테마파크를 운영하는 엔터테인먼트 기업.' },
-  { id: 'enph', symbol: 'ENPH', name: 'Enphase Energy', sector: '신재생에너지', desc: 'ㄷㅅ' },
+  { id: 'nvda', symbol: 'NVDA', name: 'NVIDIA', sector: '반도체', desc: 'AI 짱.' },
+  { id: 'tsla', symbol: 'TSLA', name: 'Tesla', sector: '모빌리티', desc: '전기 붕붕이랑 로보트.' },
+  { id: 'ko', symbol: 'KO', name: 'Coca-Cola', sector: '식품', desc: '코카콜라 맛있다 맜있으면 또먹어.' },
+  { id: 'dis', symbol: 'DIS', name: 'Disney', sector: '엔터', desc: '미키마우스.' },
   { id: 'msft', symbol: 'MSFT', name: 'Microsoft', sector: 'AI·소프트웨어', desc: '윈도우' },
-  { id: 'spcx', symbol: 'SPCX', name: 'SpaceX', sector: '항공·우주', desc: '화성 ㄱㄱ' },
+  { id: 'spcx', symbol: 'SPCX', name: 'SpaceX', sector: '항공·우주', desc: '머스크형 화성 ㄱㄱ' },
   { id: 'rklb', symbol: 'RKLB', name: 'Rocket Lab', sector: '항공·우주', desc: '로케트 발싸' },
   { id: 'ba', symbol: 'BA', name: 'Boeing', sector: '항공·우주', desc: '떴다 떴다 비행기' },
-  { id: 'ttwo', symbol: 'TTWO', name: 'Take-Two Interactive', sector: '게임', desc: 'Rockstar Games, 2K, Zynga 등 개지리는 게임 회사들 다 얘네꺼' },
+  { id: 'ttwo', symbol: 'TTWO', name: 'Take-Two Interactive', sector: '게임', desc: 'GTA 만든데' },
   { id: 'wmt', symbol: 'WMT', name: 'Walmart', sector: '유통', desc: '월마트.' },
-  { id: 'fcx', symbol: 'FCX', name: 'Freeport-McMoRan', sector: '광업·원자재', desc: '금 + 구리.' },
 ];
 
 async function fetchQuote(symbol) {
