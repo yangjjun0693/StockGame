@@ -70,7 +70,7 @@ function setStoredAccount(account) {
 export async function fetchPortfolio(userId) {
   const [{ data: snap, error: snapErr }, { data: holdingsRows, error: hErr }, { data: txRows, error: tErr }] = await Promise.all([
     supabase.from('portfolio_snapshots').select('cash, net_worth').eq('user_id', userId).maybeSingle(),
-    supabase.from('holdings').select('asset_id, asset_type, qty, avg_price').eq('user_id', userId),
+    supabase.from('holdings').select('asset_id, asset_type, qty, avg_price, side, leverage').eq('user_id', userId),
     supabase.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50),
   ]);
   if (snapErr) throw snapErr;
@@ -79,7 +79,8 @@ export async function fetchPortfolio(userId) {
 
   const holdings = {};
   (holdingsRows || []).forEach((r) => {
-    holdings[r.asset_id] = { qty: Number(r.qty), avgPrice: Number(r.avg_price) };
+    // side/leverage 컬럼이 아직 없는 기존 DB에서도 안전하게 동작하도록 기본값 처리
+    holdings[r.asset_id] = { qty: Number(r.qty), avgPrice: Number(r.avg_price), side: r.side || 'long', leverage: Number(r.leverage) || 1 };
   });
 
   const transactions = (txRows || []).map((r) => ({
@@ -109,7 +110,7 @@ export async function saveSnapshot(userId, cash, netWorth) {
   if (error) throw error;
 }
 
-export async function upsertHolding(userId, assetId, assetType, qty, avgPrice) {
+export async function upsertHolding(userId, assetId, assetType, qty, avgPrice, side = 'long', leverage = 1) {
   if (qty <= 0) {
     const { error } = await supabase.from('holdings').delete().eq('user_id', userId).eq('asset_id', assetId);
     if (error) throw error;
@@ -118,7 +119,7 @@ export async function upsertHolding(userId, assetId, assetType, qty, avgPrice) {
   const { error } = await supabase
     .from('holdings')
     .upsert(
-      { user_id: userId, asset_id: assetId, asset_type: assetType, qty, avg_price: avgPrice, updated_at: new Date().toISOString() },
+      { user_id: userId, asset_id: assetId, asset_type: assetType, qty, avg_price: avgPrice, side, leverage, updated_at: new Date().toISOString() },
       { onConflict: 'user_id,asset_id' }
     );
   if (error) throw error;

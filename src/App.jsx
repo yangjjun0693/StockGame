@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { TrendingUp, LayoutDashboard, Newspaper, Users, X, ChevronRight, Award, Lock, Check, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Newspaper, Users, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
 import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
@@ -49,15 +49,200 @@ function timeAgo(ts, now) {
 }
 
 /* ---------------------------------------------------------------- */
-/*  도전과제                                                           */
+/*  레버리지 / 롱-숏 포지션 계산 유틸                                        */
 /* ---------------------------------------------------------------- */
-const ACHIEVEMENTS = [
-  { id: 'first_buy', title: '첫 매수', desc: '아무 종목이나 처음으로 매수해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'buy') },
-  { id: 'first_profit_sell', title: '첫 익절', desc: '수익을 남기고 매도에 성공해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl > 0) },
-  { id: 'diversify5', title: '분산투자', desc: '서로 다른 5개 종목을 동시에 보유해보세요.', check: (ctx) => Object.keys(ctx.holdings).length >= 5 },
-  { id: 'big_win', title: '대박 거래', desc: '한 번의 매도로 $500 이상 수익을 실현해보세요.', check: (ctx) => ctx.transactions.some((t) => t.type === 'sell' && t.pnl >= 500) },
-  { id: 'double_asset', title: '자산 2배', desc: '총자산을 시작 자금의 2배로 불려보세요.', check: (ctx) => ctx.netWorth >= STARTING_CASH * 2 },
-];
+
+// 진입 당시 가격 기준 증거금 (마진) — 레버리지 1x면 기존 현물 매수와 동일
+function positionMargin(avgPrice, leverage, qty) {
+  return (avgPrice * qty) / leverage;
+}
+
+// 방향(롱/숏)에 따른 평가손익
+function positionPnl(side, avgPrice, price, qty) {
+  return side === 'short' ? (avgPrice - price) * qty : (price - avgPrice) * qty;
+}
+
+// 포지션의 현재 평가금액(자산가치) = 증거금 + 평가손익
+function positionValue(holding, price) {
+  const { avgPrice, qty, leverage = 1, side = 'long' } = holding;
+  return positionMargin(avgPrice, leverage, qty) + positionPnl(side, avgPrice, price, qty);
+}
+
+// holdings 맵 전체의 평가금액 합
+function totalHoldingsValue(holdings, assetsById) {
+  return Object.entries(holdings).reduce((sum, [id, h]) => {
+    const price = assetsById[id]?.price || 0;
+    return sum + positionValue(h, price);
+  }, 0);
+}
+
+const LEVERAGE_SNAP_POINTS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50];
+const LEVERAGE_MIN = 1;
+// 자산군별 현실적인 레버리지 상한: 주식은 실제 신용거래 수준(4x), FX는 소매 외환 레버리지(20x), 코인은 무기한선물 수준(50x)
+const LEVERAGE_MAX_BY_TYPE = { stock: 4, fx: 20, coin: 50 };
+
+function leveragePct(v, max) {
+  return ((v - LEVERAGE_MIN) / (max - LEVERAGE_MIN)) * 100;
+}
+
+function SidePillToggle({ side, onChange }) {
+  const isShort = side === 'short';
+  return (
+    <div
+      className="relative inline-flex rounded-full p-1 shrink-0"
+      style={{
+        background: 'var(--glass-bg)',
+        border: '1px solid var(--glass-border)',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.35)',
+        backdropFilter: 'blur(18px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+      }}
+    >
+      <div
+        className="absolute top-1 bottom-1 rounded-full pointer-events-none"
+        style={{
+          width: 52,
+          left: 4,
+          transform: `translateX(${isShort ? 52 : 0}px)`,
+          transition: 'transform 0.32s var(--spring), background 0.25s ease, box-shadow 0.25s ease',
+          background: isShort
+            ? 'linear-gradient(180deg, rgba(200,70,80,0.35), rgba(170,50,60,0.22))'
+            : 'linear-gradient(180deg, rgba(50,150,100,0.35), rgba(30,120,75,0.22))',
+          border: `1px solid ${isShort ? 'rgba(200,70,80,0.3)' : 'rgba(50,150,100,0.3)'}`,
+          boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.35)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => onChange('long')}
+        className="relative z-10 font-inter font-bold text-xs rounded-full py-1.5 transition-colors duration-200"
+        style={{ width: 52, color: isShort ? 'var(--ink-faint)' : '#fff', textShadow: isShort ? 'none' : '0 1px 2px rgba(0,0,0,0.15)' }}
+      >
+        Long
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('short')}
+        className="relative z-10 font-inter font-bold text-xs rounded-full py-1.5 transition-colors duration-200"
+        style={{ width: 52, color: isShort ? '#fff' : 'var(--ink-faint)', textShadow: isShort ? '0 1px 2px rgba(0,0,0,0.15)' : 'none' }}
+      >
+        Short
+      </button>
+    </div>
+  );
+}
+
+function LeverageSlider({ value, onChange, leftSlot, max = 50 }) {
+  const trackRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const [displayValue, setDisplayValue] = useState(value);
+  const snapPoints = useMemo(() => {
+    const pts = LEVERAGE_SNAP_POINTS.filter((v) => v <= max);
+    if (pts[pts.length - 1] !== max) pts.push(max);
+    return pts;
+  }, [max]);
+
+  useEffect(() => {
+    if (!dragging) setDisplayValue(value);
+  }, [value, dragging]);
+
+  const valueFromClientX = (clientX) => {
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const raw = LEVERAGE_MIN + pct * (max - LEVERAGE_MIN);
+    // 근처 스냅 포인트로 자석처럼 달라붙는 느낌
+    let snapped = raw;
+    let minDist = Infinity;
+    const snapWindow = Math.max(0.6, max * 0.03);
+    for (const sp of snapPoints) {
+      const d = Math.abs(raw - sp);
+      if (d < snapWindow && d < minDist) {
+        minDist = d;
+        snapped = sp;
+      }
+    }
+    return Math.round(snapped);
+  };
+
+  const update = (clientX) => {
+    const v = valueFromClientX(clientX);
+    setDisplayValue(v);
+    onChange(v);
+  };
+
+  const handlePointerDown = (e) => {
+    setDragging(true);
+    trackRef.current.setPointerCapture(e.pointerId);
+    update(e.clientX);
+  };
+  const handlePointerMove = (e) => {
+    if (!dragging) return;
+    update(e.clientX);
+  };
+  const handlePointerUp = (e) => {
+    setDragging(false);
+    try { trackRef.current.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+
+  const pct = leveragePct(displayValue, max);
+  const snapTransition = 'left 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)';
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-2">
+        {leftSlot || <span className="font-inter text-xs" style={{ color: 'var(--ink-faint)' }}>레버리지</span>}
+        <span className="font-inter font-bold text-sm tabular-nums" style={{ color: 'var(--ink)' }}>{displayValue}x</span>
+      </div>
+      <div
+        ref={trackRef}
+        className="relative h-7 flex items-center cursor-pointer select-none"
+        style={{ touchAction: 'none' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <div className="absolute inset-x-0 h-1.5 rounded-full" style={{ background: 'var(--ink-faint)', opacity: 0.3 }} />
+        <div
+          className="absolute h-1.5 rounded-full left-0"
+          style={{ width: `${pct}%`, background: 'var(--ink)', transition: dragging ? 'none' : `width 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
+        />
+        {snapPoints.map((sp) => (
+          <div
+            key={sp}
+            className="absolute w-1 h-1 rounded-full -translate-x-1/2 pointer-events-none"
+            style={{ left: `${leveragePct(sp, max)}%`, background: sp <= displayValue ? 'var(--base-bg)' : 'var(--ink)', opacity: sp <= displayValue ? 0.55 : 0.25 }}
+          />
+        ))}
+        <div
+          className="absolute rounded-full -translate-x-1/2 pointer-events-none"
+          style={{
+            left: `${pct}%`,
+            width: dragging ? 22 : 16,
+            height: dragging ? 22 : 16,
+            background: 'var(--ink)',
+            boxShadow: dragging ? '0 0 0 7px rgba(128,128,128,0.18)' : '0 1px 4px rgba(0,0,0,0.3)',
+            transition: dragging ? 'width 0.15s ease, height 0.15s ease' : `${snapTransition}, width 0.15s ease, height 0.15s ease`,
+          }}
+        />
+        {dragging && (
+          <div
+            className="absolute -translate-x-1/2 font-inter font-bold text-xs px-2 py-1 rounded-md pointer-events-none whitespace-nowrap"
+            style={{ left: `${pct}%`, top: -34, background: 'var(--ink)', color: 'var(--base-bg)' }}
+          >
+            {displayValue}x
+          </div>
+        )}
+      </div>
+      <div className="flex justify-between font-inter text-[10px] mt-1" style={{ color: 'var(--ink-faint)' }}>
+        <span>1x</span>
+        <span>{max}x</span>
+      </div>
+    </div>
+  );
+}
 
 /* ---------------------------------------------------------------- */
 /*  스파크라인                                                         */
@@ -220,11 +405,10 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
   const dirColor = stock.dir === 'down' ? 'var(--down)' : stock.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = stock.dir === 'down' ? '▼' : stock.dir === 'up' ? '▲' : '–';
   const sectorColor = SECTOR_COLORS[stock.sector] || '#999999';
-  const cost = stock.price * qty;
+  const cost = positionMargin(stock.price, holding?.leverage || 1, qty);
   const canBuy = cash >= cost;
   const canSell = holding && holding.qty >= qty;
-  const evalValue = holding ? holding.qty * stock.price : 0;
-  const pnl = holding ? evalValue - holding.qty * holding.avgPrice : 0;
+  const pnl = holding ? positionPnl(holding.side || 'long', holding.avgPrice, stock.price, holding.qty) : 0;
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -259,7 +443,8 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
         <div className="font-inter text-xs text-gray-400">
           {holding ? (
             <>
-              {holding.qty}주 · 평단 {fmt(holding.avgPrice)}{' '}
+              {holding.qty}주 · 평단 {fmt(holding.avgPrice)}
+              {(holding.leverage || 1) > 1 || holding.side === 'short' ? ` · ${holding.side === 'short' ? 'Short' : 'Long'} ${holding.leverage || 1}x` : ''}{' '}
               <span className="font-semibold" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
                 ({pnl >= 0 ? '+' : ''}{fmt(pnl)})
               </span>
@@ -295,7 +480,13 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
 /* ---------------------------------------------------------------- */
 function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
   const [qty, setQty] = useState(1);
+  const [side, setSide] = useState(holding?.side || 'long');
+  const [leverage, setLeverage] = useState(holding?.leverage || 1);
   if (!stock) return null;
+
+  // 이미 보유 중이면 방향/레버리지는 기존 포지션에 고정 (평단 계산이 꼬이지 않도록)
+  const effSide = holding ? holding.side || 'long' : side;
+  const effLeverage = holding ? holding.leverage || 1 : leverage;
 
   const change = ((stock.price - stock.open) / stock.open) * 100;
   const dirUp = stock.dir !== 'down';
@@ -304,11 +495,11 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
   const sectorColor = SECTOR_COLORS[stock.sector] || '#999999';
   const high = Math.max(...stock.history);
   const low = Math.min(...stock.history);
-  const cost = stock.price * qty;
+  const cost = positionMargin(stock.price, effLeverage, qty);
   const canBuy = cash >= cost;
   const canSell = holding && holding.qty >= qty;
-  const evalValue = holding ? holding.qty * stock.price : 0;
-  const pnl = holding ? evalValue - holding.qty * holding.avgPrice : 0;
+  const pnl = holding ? positionPnl(effSide, holding.avgPrice, stock.price, holding.qty) : 0;
+  const leverageMax = LEVERAGE_MAX_BY_TYPE[stock.assetType] || 4;
 
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
@@ -352,6 +543,10 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
                 <div className="text-sm font-semibold tabular-nums">{fmt(holding.avgPrice)}</div>
               </div>
               <div>
+                <div className="text-[11px] text-gray-400 mb-1">방향 · 배율</div>
+                <div className="text-sm font-semibold">{effSide === 'short' ? 'Short' : 'Long'} {effLeverage}x</div>
+              </div>
+              <div>
                 <div className="text-[11px] text-gray-400 mb-1">평가손익</div>
                 <div className="text-sm font-semibold tabular-nums" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
                   {pnl >= 0 ? '+' : ''}{fmt(pnl)}
@@ -361,14 +556,20 @@ function StockDetailModal({ stock, holding, cash, onBuy, onSell, onClose }) {
           )}
         </div>
 
+        {!holding && (
+          <div className="mb-4">
+            <LeverageSlider value={leverage} onChange={setLeverage} max={leverageMax} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3">
           <QtyStepper value={qty} onChange={setQty} />
           <div className="flex gap-2">
-            <button onClick={() => onBuy(stock.id, qty)} disabled={!canBuy} className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
+            <button onClick={() => onBuy(stock.id, qty, { side, leverage })} disabled={!canBuy} className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
             <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
           </div>
         </div>
-        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">주문금액 {fmt(cost)}</div>
+        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">증거금 {fmt(cost)}{effLeverage > 1 ? ` (명목 ${fmt(stock.price * qty)})` : ''}</div>
       </div>
     </div>
   );
@@ -478,14 +679,26 @@ function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDet
 /* ---------------------------------------------------------------- */
 /*  코인 카드 (CoinGecko: 메이저 + 유명 밈코인 고정 라인업)                     */
 /* ---------------------------------------------------------------- */
-const COIN_BUY_AMOUNTS = [10, 50, 100, 500];
 const COIN_SELL_PCTS = [25, 50, 100];
 
 function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
+  const [side, setSide] = useState(holding?.side || 'long');
+  const [leverage, setLeverage] = useState(holding?.leverage || 1);
+  const [amount, setAmount] = useState('50');
+
+  // 이미 보유 중이면 방향/레버리지는 기존 포지션에 고정 (평단 계산이 꼬이지 않도록)
+  const effSide = holding ? holding.side || 'long' : side;
+  const effLeverage = holding ? holding.leverage || 1 : leverage;
+
   const change = changePct(coin);
   const dirColor = coin.dir === 'down' ? 'var(--down)' : coin.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = coin.dir === 'down' ? '▼' : coin.dir === 'up' ? '▲' : '–';
   const marketCapUsd = coin.marketCapUsd ?? 0;
+
+  const marginAmount = Math.max(0, Number(amount) || 0);
+  const buyQty = coin.price > 0 ? (marginAmount * effLeverage) / coin.price : 0;
+  const canBuy = cash >= marginAmount && marginAmount > 0 && buyQty > 0;
+  const pnl = holding ? positionPnl(effSide, holding.avgPrice, coin.price, holding.qty) : 0;
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -515,31 +728,51 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
         <Sparkline history={coin.history} positive={coin.dir !== 'down'} w={320} h={44} />
       </div>
 
+      <div className="font-inter text-xs text-gray-400 mb-4">
+        {holding ? (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span>{holding.qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}개 · 평단 {fmtCoinPrice(holding.avgPrice)}</span>
+            <span
+              className="font-inter font-bold text-[10px] px-1.5 py-0.5 rounded-md"
+              style={effSide === 'short' ? { background: 'var(--down-bg)', color: 'var(--down)' } : { background: 'var(--up-bg)', color: 'var(--up)' }}
+            >
+              {effSide === 'short' ? 'Short' : 'Long'} {effLeverage}x
+            </span>
+            <span className="font-semibold" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
+              ({pnl >= 0 ? '+' : ''}{fmt(pnl)})
+            </span>
+          </div>
+        ) : (
+          '미보유'
+        )}
+      </div>
+
+      {!holding && (
+        <div className="mb-4">
+          <LeverageSlider value={leverage} onChange={setLeverage} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="font-inter text-xs text-gray-400">
-          {holding ? (
-            <>
-              {holding.qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}개 · 평단 {fmtCoinPrice(holding.avgPrice)}
-            </>
-          ) : (
-            '미보유'
-          )}
+        <div className="flex items-center gap-1.5">
+          <span className="font-inter text-sm text-gray-400">$</span>
+          <input
+            type="number"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="증거금"
+            className="font-inter font-medium text-sm w-24 border border-gray-200 rounded-full px-3 py-2 outline-none tabular-nums"
+          />
+          <button
+            onClick={() => onBuy(coin.id, buyQty, { side: effSide, leverage: effLeverage })}
+            disabled={!canBuy}
+            className="pill-btn pill-btn-primary font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-30"
+          >
+            매수
+          </button>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {COIN_BUY_AMOUNTS.map((usd) => {
-            const canBuy = cash >= usd;
-            const qty = coin.price > 0 ? usd / coin.price : 0;
-            return (
-              <button
-                key={usd}
-                onClick={() => onBuy(coin.id, qty)}
-                disabled={!canBuy || qty <= 0}
-                className="pill-btn pill-btn-primary font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-3 py-2 disabled:opacity-30"
-              >
-                ${usd}
-              </button>
-            );
-          })}
           {COIN_SELL_PCTS.map((pct) => {
             const sellQty = holding ? holding.qty * (pct / 100) : 0;
             return (
@@ -555,6 +788,11 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell }) {
           })}
         </div>
       </div>
+      {!holding && effLeverage > 1 && (
+        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">
+          명목 {fmt(buyQty * coin.price)} ({buyQty.toLocaleString('en-US', { maximumFractionDigits: 4 })}개)
+        </div>
+      )}
     </article>
   );
 }
@@ -581,33 +819,6 @@ function NetWorthChart({ history }) {
       <polygon points={areaPoints} fill={color} opacity={0.08} />
       <polyline points={linePoints} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  );
-}
-
-function AchievementsSection({ unlockedIds }) {
-  return (
-    <div className="mb-10">
-      <p className="font-inter font-medium text-xs text-gray-400 mb-3">도전과제</p>
-      <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
-        {ACHIEVEMENTS.map((a) => {
-          const unlocked = unlockedIds.has(a.id);
-          return (
-            <div
-              key={a.id}
-              className={`flex gap-2.5 items-start p-3.5 rounded-xl border ${unlocked ? 'bg-white border-gray-100' : 'bg-gray-50 border-gray-100 opacity-60'}`}
-            >
-              <div className={`shrink-0 w-6 h-6 rounded-lg flex items-center justify-center ${unlocked ? '' : 'bg-gray-100'}`} style={unlocked ? { background: 'var(--up-bg)', color: 'var(--up)' } : { color: 'var(--ink-faint)' }}>
-                {unlocked ? <Check size={13} /> : <Lock size={11} />}
-              </div>
-              <div className="min-w-0">
-                <div className="font-inter font-bold text-xs">{a.title}</div>
-                <div className="font-inter text-[11px] text-gray-400 mt-0.5 leading-snug">{a.desc}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -639,22 +850,86 @@ function TransactionsSection({ transactions }) {
   );
 }
 
-function DashboardTab({ cash, holdings, assetById, netWorthHistory, unlockedIds, transactions }) {
- const holdingsList = Object.entries(holdings)
+function DashboardHoldingRow({ h, onBuy, onSell }) {
+  const [open, setOpen] = useState(false);
+  const [qty, setQty] = useState(1);
+  const canBuy = h.cash >= positionMargin(h.avgPrice, h.leverage, qty);
+  const canSell = h.qty >= qty;
+
+  return (
+    <div className="py-3 border-b border-gray-50">
+      <div className="grid gap-3 items-center" style={{ gridTemplateColumns: '1.4fr 1fr 1fr 1fr auto' }}>
+        <div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-semibold text-sm">{h.name}</span>
+            <span
+              className="font-inter font-bold text-[10px] px-1.5 py-0.5 rounded-md"
+              style={h.side === 'short' ? { background: 'var(--down-bg)', color: 'var(--down)' } : { background: 'var(--up-bg)', color: 'var(--up)' }}
+            >
+              {h.side === 'short' ? 'Short' : 'Long'} {h.leverage}x
+            </span>
+          </div>
+          <div className="text-[11px] text-gray-400 mt-0.5">{h.sector}</div>
+        </div>
+        <div className="text-right text-sm tabular-nums">{h.isCoin ? h.qty.toLocaleString('en-US', { maximumFractionDigits: 0 }) : h.qty}{h.isCoin ? '개' : '주'}</div>
+        <div className="text-right text-sm tabular-nums">{fmt(h.value)}</div>
+        <div className="text-right text-sm font-semibold tabular-nums" style={{ color: h.pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
+          {h.pnl >= 0 ? '+' : ''}{fmt(h.pnl)}
+        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="font-inter font-medium text-xs border border-gray-200 rounded-full px-3 py-1.5 shrink-0"
+        >
+          거래
+        </button>
+      </div>
+
+      {open && (
+        <div className="flex items-center justify-between gap-3 flex-wrap mt-3 pt-3 border-t border-gray-50">
+          <QtyStepper value={qty} onChange={setQty} max={h.isCoin ? undefined : h.qty} />
+          <div className="flex gap-2">
+            <button
+              onClick={() => onBuy(h.id, qty)}
+              disabled={!canBuy}
+              className="font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-30"
+            >
+              매수
+            </button>
+            <button
+              onClick={() => onSell(h.id, Math.min(qty, h.qty))}
+              disabled={!canSell}
+              className="font-inter font-medium text-xs border border-gray-200 rounded-full px-4 py-2 disabled:opacity-30"
+            >
+              매도
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions, onBuy, onSell }) {
+  const holdingsList = Object.entries(holdings)
     .map(([id, h]) => {
       const stock = assetById[id];
       if (!stock) return null; // skip unknown assets
-      const value = h.qty * stock.price;
-      const pnl = value - h.qty * h.avgPrice;
+      const side = h.side || 'long';
+      const leverage = h.leverage || 1;
+      const value = positionMargin(h.avgPrice, leverage, h.qty) + positionPnl(side, h.avgPrice, stock.price, h.qty);
+      const pnl = positionPnl(side, h.avgPrice, stock.price, h.qty);
       return {
         id,
         name: stock.name,
         sector: stock.sector || (stock.assetType === 'coin' ? '코인' : ''),
         qty: h.qty,
         avgPrice: h.avgPrice,
+        side,
+        leverage,
         price: stock.price,
         value,
         pnl,
+        cash,
         isCoin: stock.assetType === 'coin',
       };
     })
@@ -702,22 +977,11 @@ function DashboardTab({ cash, holdings, assetById, netWorthHistory, unlockedIds,
       ) : (
         <div className="mb-8">
           {holdingsList.map((h) => (
-            <div key={h.id} className="grid gap-3 py-3 border-b border-gray-50" style={{ gridTemplateColumns: '1.4fr 1fr 1fr 1fr' }}>
-              <div>
-                <div className="font-semibold text-sm">{h.name}</div>
-                <div className="text-[11px] text-gray-400 mt-0.5">{h.sector}</div>
-              </div>
-              <div className="text-right text-sm tabular-nums">{h.isCoin ? h.qty.toLocaleString('en-US', { maximumFractionDigits: 0 }) : h.qty}{h.isCoin ? '개' : '주'}</div>
-              <div className="text-right text-sm tabular-nums">{fmt(h.value)}</div>
-              <div className="text-right text-sm font-semibold tabular-nums" style={{ color: h.pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
-                {h.pnl >= 0 ? '+' : ''}{fmt(h.pnl)}
-              </div>
-            </div>
+            <DashboardHoldingRow key={h.id} h={h} onBuy={onBuy} onSell={onSell} />
           ))}
         </div>
       )}
 
-      <AchievementsSection unlockedIds={unlockedIds} />
       <TransactionsSection transactions={transactions} />
     </div>
   );
@@ -767,23 +1031,6 @@ function NewsTab({ articles }) {
 /* ---------------------------------------------------------------- */
 /*  도전과제 달성 토스트 (poesi toast 이식)                                */
 /* ---------------------------------------------------------------- */
-function AchievementToastStack({ toasts }) {
-  if (toasts.length === 0) return null;
-  return (
-    <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
-      {toasts.map((t) => (
-        <div
-          key={t.key}
-          className="achievement-toast pointer-events-auto flex items-center gap-2 bg-gray-900 text-white font-inter text-sm font-medium px-5 py-3 rounded-full shadow-lg whitespace-nowrap"
-        >
-          <Award size={15} />
-          도전과제 달성 · {t.title}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* ---------------------------------------------------------------- */
 /*  커뮤니티 탭 — 포럼 + 랭킹 (Supabase)                                   */
 /* ---------------------------------------------------------------- */
@@ -1277,8 +1524,6 @@ export default function StockGame() {
     [cryptoNews, stockNews]
   );
   const [transactions, setTransactions] = useState([]);
-  const [unlockedIds, setUnlockedIds] = useState(() => new Set());
-  const [toasts, setToasts] = useState([]);
   const [dark, setDark] = useState(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('stockgame_theme') : null;
     if (saved) return saved === 'dark';
@@ -1339,60 +1584,53 @@ export default function StockGame() {
 
   useEffect(() => {
     if (!started) return;
-    const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
+    const holdingsValue = totalHoldingsValue(holdings, assetsById);
     setNetWorthHistory((prev) => [...prev, cash + holdingsValue].slice(-60));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks]);
 
-  useEffect(() => {
-    if (!started) return;
-    const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
-    const ctx = { transactions, holdings, netWorth: cash + holdingsValue };
-    const newlyUnlocked = ACHIEVEMENTS.filter((a) => !unlockedIds.has(a.id) && a.check(ctx));
-    if (newlyUnlocked.length === 0) return;
-    setUnlockedIds((prev) => {
-      const next = new Set(prev);
-      newlyUnlocked.forEach((a) => next.add(a.id));
-      return next;
-    });
-    const newToasts = newlyUnlocked.map((a) => ({ key: `${a.id}-${Date.now()}`, title: a.title }));
-    setToasts((prev) => [...prev, ...newToasts]);
-    newToasts.forEach((t) => {
-      setTimeout(() => setToasts((prev) => prev.filter((x) => x.key !== t.key)), 4000);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, holdings, cash, stocks, started]);
-
-  const handleBuy = (id, qty) => {
+  // 포지션 오픈/추가 매수. opts.side/leverage는 새 포지션을 열 때만 적용되고,
+  // 이미 보유 중이면 기존 포지션의 side/leverage를 그대로 따른다(평단만 갱신).
+  const handleBuy = (id, qty, opts = {}) => {
     const stock = assetsById[id];
-    const cost = stock.price * qty;
+    const existing = holdings[id];
+    const side = existing ? existing.side || 'long' : opts.side || 'long';
+    const requestedLeverage = existing ? existing.leverage || 1 : opts.leverage || 1;
+    const leverageCap = LEVERAGE_MAX_BY_TYPE[stock.assetType] || 4;
+    const leverage = Math.min(Math.max(1, requestedLeverage), leverageCap); // 자산군별 상한을 서버(핸들러)단에서도 강제
+    const cost = positionMargin(stock.price, leverage, qty); // 실제 현금에서 빠지는 증거금
+    const notional = stock.price * qty; // 평단 가중평균용 명목가치
     if (cash < cost) return;
-    const cur = holdings[id];
+    const cur = existing;
     const newQty = (cur?.qty || 0) + qty;
-    const newAvg = cur ? (cur.avgPrice * cur.qty + cost) / newQty : stock.price;
+    const newAvg = cur ? (cur.avgPrice * cur.qty + notional) / newQty : stock.price;
     const newCash = cash - cost;
-    const newHoldings = { ...holdings, [id]: { qty: newQty, avgPrice: newAvg } };
+    const newHoldings = { ...holdings, [id]: { qty: newQty, avgPrice: newAvg, side, leverage } };
 
     setCash(newCash);
     setHoldings(newHoldings);
     setTransactions((prev) =>
-      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'buy', stockId: id, stockName: stock.name, qty, price: stock.price, total: cost, pnl: null, time: Date.now() }, ...prev].slice(0, 50)
+      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'buy', stockId: id, stockName: stock.name, qty, price: stock.price, total: cost, pnl: null, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
     );
 
     if (account) {
-      const holdingsValue = Object.entries(newHoldings).reduce((sum, [aid, h]) => sum + h.qty * (assetsById[aid]?.price || 0), 0);
-      upsertHolding(account.id, id, stock.assetType, newQty, newAvg).catch(() => {});
+      const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
+      upsertHolding(account.id, id, stock.assetType, newQty, newAvg, side, leverage).catch(() => {});
       insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'buy', qty, price: stock.price }).catch(() => {});
       saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
     }
   };
 
+  // 포지션 축소/청산. 롱/숏 방향에 따라 손익 부호가 달라지고,
+  // 반환되는 현금은 (청산 비중만큼의 증거금 + 손익)이다.
   const handleSell = (id, qty) => {
     const stock = assetsById[id];
     const cur = holdings[id];
     if (!cur || cur.qty < qty) return;
-    const proceeds = stock.price * qty;
-    const pnl = (stock.price - cur.avgPrice) * qty;
+    const side = cur.side || 'long';
+    const leverage = cur.leverage || 1;
+    const pnl = positionPnl(side, cur.avgPrice, stock.price, qty);
+    const proceeds = positionMargin(cur.avgPrice, leverage, qty) + pnl;
     const remaining = cur.qty - qty;
     const newCash = cash + proceeds;
     const newHoldings = { ...holdings };
@@ -1402,12 +1640,12 @@ export default function StockGame() {
     setCash(newCash);
     setHoldings(newHoldings);
     setTransactions((prev) =>
-      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'sell', stockId: id, stockName: stock.name, qty, price: stock.price, total: proceeds, pnl, time: Date.now() }, ...prev].slice(0, 50)
+      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'sell', stockId: id, stockName: stock.name, qty, price: stock.price, total: proceeds, pnl, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
     );
 
     if (account) {
-      const holdingsValue = Object.entries(newHoldings).reduce((sum, [aid, h]) => sum + h.qty * (assetsById[aid]?.price || 0), 0);
-      upsertHolding(account.id, id, stock.assetType, remaining, cur.avgPrice).catch(() => {});
+      const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
+      upsertHolding(account.id, id, stock.assetType, remaining, cur.avgPrice, side, leverage).catch(() => {});
       insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'sell', qty, price: stock.price }).catch(() => {});
       saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
     }
@@ -1431,7 +1669,7 @@ export default function StockGame() {
   }
   if (!started || !dataLoaded) return <LoadingScreen />;
 
-  const holdingsValue = Object.entries(holdings).reduce((sum, [id, h]) => sum + h.qty * (assetsById[id]?.price || 0), 0);
+  const holdingsValue = totalHoldingsValue(holdings, assetsById);
   const netWorth = cash + holdingsValue;
   const detailStock = detailId ? assetsById[detailId] : null;
 
@@ -1484,8 +1722,9 @@ export default function StockGame() {
               holdings={holdings}
               assetById={assetsById}
               netWorthHistory={netWorthHistory}
-              unlockedIds={unlockedIds}
               transactions={transactions}
+              onBuy={handleBuy}
+              onSell={handleSell}
             />
           )}
         </div>
@@ -1521,7 +1760,6 @@ export default function StockGame() {
         />
       )}
 
-      <AchievementToastStack toasts={toasts} />
     </div>
   );
 }
