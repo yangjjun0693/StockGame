@@ -92,6 +92,10 @@ const FX_TV_SYMBOL = {
   JPY: 'FX:USDJPY', KRW: 'FX:USDKRW', CHF: 'FX:USDCHF',
 };
 
+// 이 밈코인들은 TradingView(바이낸스 심볼)에 데이터가 없거나 부실해서
+// 상세 모달에서 TV 차트 탭 자체를 숨기고 항상 "간단" 차트만 보여준다.
+const NO_TV_SYMBOLS = new Set(['BABYDOGE', 'FARTCOIN', 'SPX', 'BRETT', 'POPCAT', 'MOG', 'MEW', 'GOAT', 'MYRO']);
+
 function tvSymbolFor(asset) {
   if (!asset) return null;
   if (asset.assetType === 'coin') return `BINANCE:${asset.symbol.toUpperCase()}USDT`;
@@ -619,7 +623,7 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
   const canSell = holding && holding.qty >= qty;
   const pnl = holding ? positionPnl(effSide, holding.avgPrice, stock.price, holding.qty) : 0;
 
-  const isTv = chartMode === 'tv';
+  const isTv = chartMode === 'tv' && !NO_TV_SYMBOLS.has(stock.symbol);
 
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
@@ -655,9 +659,11 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
           </div>
         </div>
 
-        <div className={`flex justify-center ${isTv ? 'mb-3 shrink-0' : 'my-3'}`} style={{ transition: 'margin 0.4s var(--ease)' }}>
-          <ChartModeToggle mode={chartMode} onChange={setChartMode} />
-        </div>
+        {!NO_TV_SYMBOLS.has(stock.symbol) && (
+          <div className={`flex justify-center ${isTv ? 'mb-3 shrink-0' : 'my-3'}`} style={{ transition: 'margin 0.4s var(--ease)' }}>
+            <ChartModeToggle mode={chartMode} onChange={setChartMode} />
+          </div>
+        )}
 
         {isTv ? (
           <div
