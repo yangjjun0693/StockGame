@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { TrendingUp, LayoutDashboard, Newspaper, Users, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
-import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction } from './lib/supabase';
+import { TrendingUp, LayoutDashboard, Newspaper, Users, Trophy, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
+import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction, fetchUnlockedAchievements, unlockAchievement } from './lib/supabase';
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
 import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
 import { useFxRates } from './lib/fx';
 import { useCryptoNews } from './lib/cryptonews';
 import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
+import { buildAchievements, ACHIEVEMENT_CATEGORIES } from './lib/achievements';
 
 // poesi의 팔레트 태그를 이식한 섹터 컬러 (실제 종목 12개 + FX 묶음)
 const SECTOR_COLORS = {
@@ -1109,6 +1110,91 @@ function DashboardHoldingRow({ h, onBuy, onSell }) {
   );
 }
 
+/* ---------------------------------------------------------------- */
+/*  도전 과제 탭 (카테고리별 리스트)                                        */
+/* ---------------------------------------------------------------- */
+function AchievementCard({ achievement, unlocked, ctx }) {
+  const current = achievement.progress(ctx);
+  const target = achievement.target;
+  const pct = Math.min(100, Math.round((Math.max(0, current) / target) * 100));
+  const fmtVal = (n) => (achievement.isMoney ? fmt(n) : Math.floor(n).toLocaleString());
+
+  return (
+    <div
+      className="rounded-xl p-4 transition-opacity"
+      style={{
+        background: unlocked ? 'var(--card-bg, #fff)' : 'var(--gray-50, #f9fafb)',
+        border: '1px solid var(--glass-border, #eee)',
+        opacity: unlocked ? 1 : 0.85,
+      }}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <h3 className="font-inter font-bold text-sm" style={{ color: unlocked ? 'var(--ink)' : 'var(--ink-faint)' }}>
+            {achievement.title}
+          </h3>
+          {unlocked && (
+            <span className="font-inter font-semibold text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#22C55E22', color: '#16A34A' }}>
+              달성
+            </span>
+          )}
+        </div>
+        <p className="font-inter text-xs text-gray-400 mb-2 leading-5">{achievement.desc}</p>
+        {!unlocked && (
+          <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#00000010' }}>
+            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#B8860B' }} />
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          {!unlocked ? (
+            <span className="font-inter text-[11px] text-gray-400 tabular-nums">{fmtVal(current)} / {fmtVal(target)}</span>
+          ) : <span />}
+          <span className="font-inter font-semibold text-[11px] tabular-nums" style={{ color: unlocked ? '#16A34A' : 'var(--ink-faint)' }}>
+            +{fmt(achievement.reward)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AchievementsTab({ achievements, unlockedIds, cash, holdings, assetsById, transactions }) {
+  const netWorth = cash + totalHoldingsValue(holdings, assetsById);
+  const realizedPnl = transactions.reduce((sum, t) => sum + (t.type === 'sell' && typeof t.pnl === 'number' ? t.pnl : 0), 0);
+  const assetTypesTraded = new Set(transactions.map((t) => t.assetType).filter(Boolean));
+  const maxLeverageUsed = transactions.reduce((max, t) => Math.max(max, t.leverage || 1), 1);
+  const ctx = { transactions, holdings, netWorth, realizedPnl, assetTypesTraded, maxLeverageUsed };
+
+  const unlockedCount = achievements.filter((a) => unlockedIds.has(a.id)).length;
+
+  return (
+    <div className="px-5 pb-8 space-y-6">
+      <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: 'var(--gray-50, #f9fafb)' }}>
+        <div>
+          <p className="font-inter font-bold text-sm">달성한 도전 과제</p>
+          <p className="font-inter text-xs text-gray-400 mt-0.5">거래하고, 수익 내고, 포트폴리오를 키우면서 보상을 받아보세요.</p>
+        </div>
+        <p className="font-myeongjo font-bold text-2xl tabular-nums shrink-0 ml-3">{unlockedCount}/{achievements.length}</p>
+      </div>
+
+      {ACHIEVEMENT_CATEGORIES.map((category) => {
+        const list = achievements.filter((a) => a.category === category);
+        if (list.length === 0) return null;
+        return (
+          <div key={category}>
+            <h2 className="font-inter font-bold text-xs text-gray-400 mb-2.5 tracking-wide">{category.toUpperCase()}</h2>
+            <div className="space-y-2.5">
+              {list.map((a) => (
+                <AchievementCard key={a.id} achievement={a} unlocked={unlockedIds.has(a.id)} ctx={ctx} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions, onBuy, onSell }) {
   const holdingsList = Object.entries(holdings)
     .map(([id, h]) => {
@@ -1596,6 +1682,7 @@ const TABS = [
   { id: 'market', label: '마켓', icon: TrendingUp },
   { id: 'news', label: '뉴스', icon: Newspaper },
   { id: 'community', label: '커뮤니티', icon: Users },
+  { id: 'achievements', label: '도전과제', icon: Trophy },
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
 ];
 
@@ -1700,7 +1787,7 @@ function Tabbar({ tab, setTab }) {
 /* ---------------------------------------------------------------- */
 /*  메인 컴포넌트                                                       */
 /* ---------------------------------------------------------------- */
-const TAB_TITLES = { market: '마켓', news: '뉴스', community: '커뮤니티', dashboard: '대시보드' };
+const TAB_TITLES = { market: '마켓', news: '뉴스', community: '커뮤니티', achievements: '도전과제', dashboard: '대시보드' };
 
 export default function StockGame() {
   const [account, setAccount] = useState(() => getStoredAccount());
@@ -1724,6 +1811,8 @@ export default function StockGame() {
     [cryptoNews, stockNews]
   );
   const [transactions, setTransactions] = useState([]);
+  const [unlockedIds, setUnlockedIds] = useState(new Set());
+  const [recentUnlock, setRecentUnlock] = useState(null); // achievement just unlocked, for a toast
   const [dark, setDark] = useState(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('stockgame_theme') : null;
     if (saved) return saved === 'dark';
@@ -1750,13 +1839,17 @@ export default function StockGame() {
     let cancelled = false;
     (async () => {
       try {
-        const portfolio = await fetchPortfolio(account.id);
+        const [portfolio, unlocked] = await Promise.all([
+          fetchPortfolio(account.id),
+          fetchUnlockedAchievements(account.id).catch(() => new Set()), // 도전과제 로딩 실패는 게임 진입을 막지 않음
+        ]);
         if (cancelled) return;
         const initialCash = portfolio.isNew ? STARTING_CASH : portfolio.cash;
         setCash(initialCash);
         setHoldings(portfolio.holdings);
         setTransactions(portfolio.transactions);
         setNetWorthHistory([initialCash]);
+        setUnlockedIds(unlocked);
         if (portfolio.isNew) {
           saveSnapshot(account.id, STARTING_CASH, STARTING_CASH).catch(() => {});
         }
@@ -1770,6 +1863,12 @@ export default function StockGame() {
   }, [account, dataLoaded]);
 
   useEffect(() => {
+    if (!recentUnlock) return;
+    const t = setTimeout(() => setRecentUnlock(null), 4000);
+    return () => clearTimeout(t);
+  }, [recentUnlock]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
     localStorage.setItem('stockgame_theme', dark ? 'dark' : 'light');
   }, [dark]);
@@ -1781,6 +1880,37 @@ export default function StockGame() {
   };
 
   const assetsById = useMemo(() => Object.fromEntries([...stocks, ...coins, ...fx].map((a) => [a.id, a])), [stocks, coins, fx]);
+
+  // 도전과제 정의는 STARTING_CASH 기준으로 배율 계산되므로 한 번만 생성.
+  const achievements = useMemo(() => buildAchievements(STARTING_CASH), []);
+
+  // 거래/보유/자산 상태가 바뀔 때마다 아직 안 깬 도전과제를 검사하고,
+  // 새로 달성한 게 있으면 현금 보상을 지급 + Supabase에 기록 + 토스트 표시.
+  useEffect(() => {
+    if (!account || !dataLoaded) return;
+    const netWorth = cash + totalHoldingsValue(holdings, assetsById);
+    const realizedPnl = transactions.reduce((sum, t) => sum + (t.type === 'sell' && typeof t.pnl === 'number' ? t.pnl : 0), 0);
+    const assetTypesTraded = new Set(transactions.map((t) => t.assetType).filter(Boolean));
+    const maxLeverageUsed = transactions.reduce((max, t) => Math.max(max, t.leverage || 1), 1);
+    const ctx = { transactions, holdings, netWorth, realizedPnl, assetTypesTraded, maxLeverageUsed };
+
+    const newlyUnlocked = achievements.filter((a) => !unlockedIds.has(a.id) && a.check(ctx));
+    if (newlyUnlocked.length === 0) return;
+
+    setUnlockedIds((prev) => {
+      const next = new Set(prev);
+      newlyUnlocked.forEach((a) => next.add(a.id));
+      return next;
+    });
+    const totalReward = newlyUnlocked.reduce((sum, a) => sum + a.reward, 0);
+    const nextCash = cash + totalReward;
+    setCash(nextCash);
+    saveSnapshot(account.id, nextCash, nextCash + totalHoldingsValue(holdings, assetsById)).catch(() => {});
+    newlyUnlocked.forEach((a) => unlockAchievement(account.id, a.id).catch(() => {}));
+    setRecentUnlock(newlyUnlocked[newlyUnlocked.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, dataLoaded, transactions, holdings, cash, assetsById, achievements]);
+
 
   useEffect(() => {
     if (!started) return;
@@ -1810,7 +1940,7 @@ export default function StockGame() {
     setCash(newCash);
     setHoldings(newHoldings);
     setTransactions((prev) =>
-      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'buy', stockId: id, stockName: stock.name, qty, price: stock.price, total: cost, pnl: null, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
+      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'buy', stockId: id, stockName: stock.name, assetType: stock.assetType, qty, price: stock.price, total: cost, pnl: null, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
     );
 
     if (account) {
@@ -1840,13 +1970,13 @@ export default function StockGame() {
     setCash(newCash);
     setHoldings(newHoldings);
     setTransactions((prev) =>
-      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'sell', stockId: id, stockName: stock.name, qty, price: stock.price, total: proceeds, pnl, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
+      [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'sell', stockId: id, stockName: stock.name, assetType: stock.assetType, qty, price: stock.price, total: proceeds, pnl, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
     );
 
     if (account) {
       const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
       upsertHolding(account.id, id, stock.assetType, remaining, cur.avgPrice, side, leverage).catch(() => {});
-      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'sell', qty, price: stock.price }).catch(() => {});
+      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'sell', qty, price: stock.price, pnl }).catch(() => {});
       saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
     }
   };
@@ -1916,6 +2046,16 @@ export default function StockGame() {
           )}
           {tab === 'news' && <NewsTab articles={news} />}
           {tab === 'community' && <CommunityTab account={account} />}
+          {tab === 'achievements' && (
+            <AchievementsTab
+              achievements={achievements}
+              unlockedIds={unlockedIds}
+              cash={cash}
+              holdings={holdings}
+              assetsById={assetsById}
+              transactions={transactions}
+            />
+          )}
           {tab === 'dashboard' && (
             <DashboardTab
               cash={cash}
@@ -1948,6 +2088,27 @@ export default function StockGame() {
       </div>
 
       <Tabbar tab={tab} setTab={setTab} />
+
+      {recentUnlock && (
+        <div
+          className="fixed left-1/2 z-[60] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl"
+          style={{
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 92px)',
+            transform: 'translateX(-50%)',
+            background: 'var(--card-bg, #fff)',
+            border: '1px solid var(--glass-border, #eee)',
+            animation: 'fadeUp 0.3s var(--ease) both',
+          }}
+        >
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: '#F5B23422', color: '#B8860B' }}>
+            <Trophy size={16} />
+          </div>
+          <div>
+            <p className="font-inter font-bold text-xs">도전 과제 달성! {recentUnlock.title}</p>
+            <p className="font-inter text-[11px] text-gray-400">+{fmt(recentUnlock.reward)} 지급됨</p>
+          </div>
+        </div>
+      )}
 
       {detailStock && (
         <StockDetailModal

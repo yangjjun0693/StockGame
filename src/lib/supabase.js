@@ -88,10 +88,11 @@ export async function fetchPortfolio(userId) {
     type: r.side,
     stockId: r.symbol,
     stockName: r.symbol,
+    assetType: r.asset_type,
     qty: Number(r.qty),
     price: Number(r.price),
     total: Number(r.qty) * Number(r.price),
-    pnl: null,
+    pnl: r.pnl === null ? null : Number(r.pnl),
     time: new Date(r.created_at).getTime(),
   }));
 
@@ -125,7 +126,28 @@ export async function upsertHolding(userId, assetId, assetType, qty, avgPrice, s
   if (error) throw error;
 }
 
-export async function insertTransaction(userId, { symbol, assetType, side, qty, price }) {
-  const { error } = await supabase.from('transactions').insert({ user_id: userId, symbol, asset_type: assetType, side, qty, price });
+export async function insertTransaction(userId, { symbol, assetType, side, qty, price, pnl = null }) {
+  const { error } = await supabase.from('transactions').insert({ user_id: userId, symbol, asset_type: assetType, side, qty, price, pnl });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------
+// Achievements. Only *which* achievements are unlocked (+ when) lives in
+// the DB — the definitions themselves (title/desc/reward/check logic)
+// live in src/lib/achievements.js so adding a new one needs no migration.
+// ---------------------------------------------------------------------
+
+export async function fetchUnlockedAchievements(userId) {
+  const { data, error } = await supabase.from('user_achievements').select('achievement_id').eq('user_id', userId);
+  if (error) throw error;
+  return new Set((data || []).map((r) => r.achievement_id));
+}
+
+export async function unlockAchievement(userId, achievementId) {
+  // onConflict + ignoreDuplicates so a race between two checks (or a
+  // retry) never throws on the unique (user_id, achievement_id) index.
+  const { error } = await supabase
+    .from('user_achievements')
+    .upsert({ user_id: userId, achievement_id: achievementId }, { onConflict: 'user_id,achievement_id', ignoreDuplicates: true });
   if (error) throw error;
 }
