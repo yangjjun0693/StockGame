@@ -27,6 +27,7 @@ const HISTORY_LEN = 40; // match the local-sim sparkline length it replaces
 // English company name; `symbol` (the ticker) renders under it in the card.
 export const CURATED_STOCKS = [
   { id: 'nvda', symbol: 'NVDA', name: 'NVIDIA', sector: '반도체', desc: 'AI 짱.' },
+  { id: 'skhy', symbol: 'SKHY', name: 'SK Hynix(ADR)', sector: '반도체', desc: '하닉' },
   { id: 'tsla', symbol: 'TSLA', name: 'Tesla', sector: '모빌리티', desc: '전기 붕붕이랑 로보트.' },
   { id: 'ko', symbol: 'KO', name: 'Coca-Cola', sector: '식품', desc: '코카콜라 맛있다 맜있으면 또먹어.' },
   { id: 'dis', symbol: 'DIS', name: 'Disney', sector: '엔터', desc: '미키마우스.' },
@@ -34,8 +35,6 @@ export const CURATED_STOCKS = [
   { id: 'spcx', symbol: 'SPCX', name: 'SpaceX', sector: '항공·우주', desc: '머스크형 화성 ㄱㄱ' },
   { id: 'rklb', symbol: 'RKLB', name: 'Rocket Lab', sector: '항공·우주', desc: '로케트 발싸' },
   { id: 'ba', symbol: 'BA', name: 'Boeing', sector: '항공·우주', desc: '떴다 떴다 비행기' },
-  { id: 'ttwo', symbol: 'TTWO', name: 'Take-Two Interactive', sector: '게임', desc: 'GTA 만든데' },
-  { id: 'wmt', symbol: 'WMT', name: 'Walmart', sector: '유통', desc: '월마트.' },
 ];
 
 async function fetchQuote(symbol) {
