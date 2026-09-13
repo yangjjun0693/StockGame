@@ -71,7 +71,7 @@ export async function fetchPortfolio(userId) {
   const [{ data: snap, error: snapErr }, { data: holdingsRows, error: hErr }, { data: txRows, error: tErr }] = await Promise.all([
     supabase.from('portfolio_snapshots').select('cash, net_worth').eq('user_id', userId).maybeSingle(),
     supabase.from('holdings').select('asset_id, asset_type, qty, avg_price, side, leverage').eq('user_id', userId),
-    supabase.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50),
+    supabase.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
   ]);
   if (snapErr) throw snapErr;
   if (hErr) throw hErr;
