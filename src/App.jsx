@@ -1121,9 +1121,8 @@ function AchievementCard({ achievement, unlocked, ctx }) {
 
   return (
     <div
-      className="rounded-xl p-4 transition-opacity"
+      className={`rounded-xl p-4 transition-opacity ${unlocked ? 'bg-white' : 'bg-gray-50'}`}
       style={{
-        background: unlocked ? 'var(--card-bg, #fff)' : 'var(--gray-50, #f9fafb)',
         border: '1px solid var(--glass-border, #eee)',
         opacity: unlocked ? 1 : 0.85,
       }}
@@ -1141,7 +1140,7 @@ function AchievementCard({ achievement, unlocked, ctx }) {
         </div>
         <p className="font-inter text-xs text-gray-400 mb-2 leading-5">{achievement.desc}</p>
         {!unlocked && (
-          <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#00000010' }}>
+          <div className="h-1.5 rounded-full overflow-hidden mb-1.5 bg-gray-100">
             <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#B8860B' }} />
           </div>
         )}
@@ -1169,7 +1168,7 @@ function AchievementsTab({ achievements, unlockedIds, cash, holdings, assetsById
 
   return (
     <div className="px-5 pb-8 space-y-6">
-      <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: 'var(--gray-50, #f9fafb)' }}>
+      <div className="rounded-xl p-4 flex items-center justify-between bg-gray-50">
         <div>
           <p className="font-inter font-bold text-sm">달성한 도전 과제</p>
           <p className="font-inter text-xs text-gray-400 mt-0.5">거래하고, 수익 내고, 포트폴리오를 키우면서 보상을 받아보세요.</p>
@@ -1794,7 +1793,7 @@ function UserProfileModal({ userId, nickname, assetsById, achievements, onClose 
             </div>
 
             {/* Achievements */}
-            <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: 'var(--gray-50, #f9fafb)' }}>
+            <div className="rounded-xl p-4 flex items-center justify-between bg-gray-50">
               <p className="font-inter font-medium text-xs text-gray-400">달성한 도전 과제</p>
               <p className="font-myeongjo font-bold text-xl tabular-nums shrink-0 ml-3">{unlockedCount}/{achievements.length}</p>
             </div>
@@ -2244,11 +2243,10 @@ export default function StockGame() {
 
       {recentUnlock && (
         <div
-          className="fixed left-1/2 z-[60] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl"
+          className="fixed left-1/2 z-[60] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl bg-white"
           style={{
             bottom: 'calc(env(safe-area-inset-bottom, 0px) + 92px)',
             transform: 'translateX(-50%)',
-            background: 'var(--card-bg, #fff)',
             border: '1px solid var(--glass-border, #eee)',
             animation: 'fadeUp 0.3s var(--ease) both',
           }}
