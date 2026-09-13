@@ -104,6 +104,14 @@ function positionValue(holding, price) {
   return positionMargin(avgPrice, leverage, qty) + positionPnl(side, avgPrice, price, qty);
 }
 
+// 강제청산가 미리보기. equity <= margin * MAINTENANCE_MARGIN_RATIO 되는 가격을 역산.
+// 1배(현물)는 청산 대상이 아니므로 null.
+function liquidationPrice(avgPrice, leverage, side, maintenanceRatio) {
+  if (!leverage || leverage <= 1) return null;
+  const factor = (1 - maintenanceRatio) / leverage;
+  return side === 'short' ? avgPrice * (1 + factor) : avgPrice * (1 - factor);
+}
+
 // holdings 맵 전체의 평가금액 합
 function totalHoldingsValue(holdings, assetsById) {
   return Object.entries(holdings).reduce((sum, [id, h]) => {
@@ -570,6 +578,8 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
   const canBuy = cash >= cost;
   const canSell = holding && holding.qty >= qty;
   const pnl = holding ? positionPnl(effSide, holding.avgPrice, stock.price, holding.qty) : 0;
+  const holdingLiqPrice = holding ? liquidationPrice(holding.avgPrice, effLeverage, effSide, MAINTENANCE_MARGIN_RATIO) : null;
+  const previewLiqPrice = !holding ? liquidationPrice(stock.price, leverage, side, MAINTENANCE_MARGIN_RATIO) : null;
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -609,6 +619,9 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
               <span className="font-semibold" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
                 ({pnl >= 0 ? '+' : ''}{fmt(pnl)})
               </span>
+              {holdingLiqPrice != null && (
+                <span style={{ color: 'var(--down)' }}> · 청산가 {fmtCoinPrice(holdingLiqPrice)}</span>
+              )}
             </>
           ) : (
             '미보유'
@@ -676,7 +689,10 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
         </div>
       </div>
       {!holding && effLeverage > 1 && (
-        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">증거금 {fmt(cost)} (명목 {fmt(stock.price * qty)})</div>
+        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">
+          증거금 {fmt(cost)} (명목 {fmt(stock.price * qty)})
+          {previewLiqPrice != null && <span style={{ color: 'var(--down)' }}> · 예상 청산가 {fmtCoinPrice(previewLiqPrice)}</span>}
+        </div>
       )}
     </article>
   );
@@ -715,6 +731,8 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
   const canBuy = isCoin ? cash >= marginAmount && marginAmount > 0 && coinBuyQty > 0 : cash >= cost;
   const canSell = holding && holding.qty >= qty;
   const pnl = holding ? positionPnl(effSide, holding.avgPrice, stock.price, holding.qty) : 0;
+  const holdingLiqPrice = holding ? liquidationPrice(holding.avgPrice, effLeverage, effSide, MAINTENANCE_MARGIN_RATIO) : null;
+  const previewLiqPrice = !holding ? liquidationPrice(stock.price, effLeverage, effSide, MAINTENANCE_MARGIN_RATIO) : null;
 
   const isTv = chartMode === 'tv' && !NO_TV_SYMBOLS.has(stock.symbol);
 
@@ -796,6 +814,12 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
                       {pnl >= 0 ? '+' : ''}{fmt(pnl)}
                     </div>
                   </div>
+                  {holdingLiqPrice != null && (
+                    <div>
+                      <div className="text-[11px] text-gray-400 mb-1">청산가</div>
+                      <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--down)' }}>{fmtCoinPrice(holdingLiqPrice)}</div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -803,6 +827,11 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
             {!holding && (
               <div className="mb-4">
                 <LeverageSlider value={leverage} onChange={setLeverage} max={leverageMax} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+                {previewLiqPrice != null && (
+                  <div className="text-right text-[11px] font-inter mt-2 tabular-nums" style={{ color: 'var(--down)' }}>
+                    예상 청산가 {fmtCoinPrice(previewLiqPrice)}
+                  </div>
+                )}
               </div>
             )}
 
@@ -992,6 +1021,8 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell, onOpenDetail }) {
   const buyQty = coin.price > 0 ? (marginAmount * effLeverage) / coin.price : 0;
   const canBuy = cash >= marginAmount && marginAmount > 0 && buyQty > 0;
   const pnl = holding ? positionPnl(effSide, holding.avgPrice, coin.price, holding.qty) : 0;
+  const holdingLiqPrice = holding ? liquidationPrice(holding.avgPrice, effLeverage, effSide, MAINTENANCE_MARGIN_RATIO) : null;
+  const previewLiqPrice = !holding ? liquidationPrice(coin.price, leverage, side, MAINTENANCE_MARGIN_RATIO) : null;
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -1034,6 +1065,9 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell, onOpenDetail }) {
             <span className="font-semibold" style={{ color: pnl >= 0 ? 'var(--up)' : 'var(--down)' }}>
               ({pnl >= 0 ? '+' : ''}{fmt(pnl)})
             </span>
+            {holdingLiqPrice != null && (
+              <span style={{ color: 'var(--down)' }}>청산가 {fmtCoinPrice(holdingLiqPrice)}</span>
+            )}
           </div>
         ) : (
           '미보유'
@@ -1043,6 +1077,11 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell, onOpenDetail }) {
       {!holding && (
         <div className="mb-4">
           <LeverageSlider value={leverage} onChange={setLeverage} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+          {previewLiqPrice != null && (
+            <div className="text-right text-[11px] font-inter mt-2 tabular-nums" style={{ color: 'var(--down)' }}>
+              예상 청산가 {fmtCoinPrice(previewLiqPrice)}
+            </div>
+          )}
         </div>
       )}
 
