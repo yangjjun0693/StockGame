@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { TrendingUp, LayoutDashboard, Newspaper, Users, Trophy, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
-import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, upsertHolding, insertTransaction, fetchUnlockedAchievements, unlockAchievement } from './lib/supabase';
+import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, fetchNetWorthHistory, upsertHolding, insertTransaction, fetchUnlockedAchievements, unlockAchievement } from './lib/supabase';
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
 import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
 import { useFxRates } from './lib/fx';
@@ -1133,23 +1133,89 @@ function CoinCard({ coin, index, holding, cash, onBuy, onSell, onOpenDetail }) {
 /*  대시보드 탭                                                         */
 /* ---------------------------------------------------------------- */
 function NetWorthChart({ history }) {
+  const [hover, setHover] = useState(null); // { i, x, y }
   const w = 640;
   const h = 160;
-  if (history.length < 2) return <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} />;
-  const min = Math.min(...history);
-  const max = Math.max(...history);
+  const padTop = 18;
+  const padBottom = 8;
+  const plotH = h - padTop - padBottom;
+
+  if (history.length < 1) return <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} />;
+
+  const min = Math.min(...history, STARTING_CASH);
+  const max = Math.max(...history, STARTING_CASH);
   const range = max - min || 1;
-  const step = w / (history.length - 1);
+  const step = history.length > 1 ? w / (history.length - 1) : 0;
   const positive = history[history.length - 1] >= history[0];
-  const points = history.map((v, i) => [i * step, h - ((v - min) / range) * h]);
+  const yFor = (v) => padTop + plotH - ((v - min) / range) * plotH;
+  const points = history.length > 1 ? history.map((v, i) => [i * step, yFor(v)]) : [[0, yFor(history[0])], [w, yFor(history[0])]];
   const linePoints = points.map((p) => p.join(',')).join(' ');
-  const areaPoints = `0,${h} ${linePoints} ${w},${h}`;
+  const areaPoints = `0,${h - padBottom} ${linePoints} ${w},${h - padBottom}`;
   const color = positive ? 'var(--up)' : 'var(--down)';
+  const baselineY = yFor(STARTING_CASH);
+  const last = points[points.length - 1];
+  const gradId = 'nwGrad';
+
+  const handleMove = (e) => {
+    if (history.length < 2) {
+      setHover({ i: 0, x: last[0], y: last[1] });
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * w;
+    const i = Math.max(0, Math.min(history.length - 1, Math.round(relX / step)));
+    setHover({ i, x: points[i][0], y: points[i][1] });
+  };
+
+  const hoverValue = hover ? history[Math.min(hover.i, history.length - 1)] : null;
+  const hoverPositive = hover ? hoverValue >= history[0] : positive;
 
   return (
-    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
-      <polygon points={areaPoints} fill={color} opacity={0.08} />
+    <svg
+      width="100%"
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      onMouseMove={handleMove}
+      onMouseLeave={() => setHover(null)}
+      style={{ overflow: 'visible', cursor: 'crosshair' }}
+    >
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.22} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+
+      {/* 시작 시드머니 기준선 */}
+      <line x1={0} y1={baselineY} x2={w} y2={baselineY} stroke="var(--ink-faint)" strokeOpacity={0.35} strokeWidth={1} strokeDasharray="4 4" />
+
+      <polygon points={areaPoints} fill={`url(#${gradId})`} />
       <polyline points={linePoints} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* 최신값 점 (은은한 펄스) */}
+      <circle cx={last[0]} cy={last[1]} r={7} fill={color} opacity={0.18}>
+        <animate attributeName="r" values="5;9;5" dur="2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.25;0.05;0.25" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={last[0]} cy={last[1]} r={3} fill={color} />
+
+      {hover && (
+        <>
+          <line x1={hover.x} y1={padTop} x2={hover.x} y2={h - padBottom} stroke="var(--ink-faint)" strokeOpacity={0.4} strokeWidth={1} />
+          <circle cx={hover.x} cy={hover.y} r={4} fill={hoverPositive ? 'var(--up)' : 'var(--down)'} stroke="white" strokeWidth={1.5} />
+          <text
+            x={Math.min(Math.max(hover.x, 55), w - 55)}
+            y={Math.max(hover.y - 12, 12)}
+            textAnchor="middle"
+            fontSize="12"
+            fontWeight="700"
+            fill="var(--ink)"
+          >
+            {fmt(hoverValue)}
+          </text>
+        </>
+      )}
     </svg>
   );
 }
@@ -1374,6 +1440,11 @@ function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions
       <div className="bg-white border border-gray-100 rounded-xl px-4 pt-4 pb-2 mb-7">
         <p className="font-inter font-medium text-xs text-gray-400 mb-1.5">자산 추이</p>
         <NetWorthChart history={netWorthHistory} />
+        <div className="flex justify-between text-[11px] text-gray-400 mt-2 font-inter tabular-nums">
+          <span>최저 {fmt(Math.min(...netWorthHistory, STARTING_CASH))}</span>
+          <span>시드 {fmt(STARTING_CASH)}</span>
+          <span>최고 {fmt(Math.max(...netWorthHistory, STARTING_CASH))}</span>
+        </div>
       </div>
 
       <div className="flex gap-8 mb-4 font-inter">
@@ -2132,7 +2203,9 @@ export default function StockGame() {
         setCash(initialCash);
         setHoldings(portfolio.holdings);
         setTransactions(portfolio.transactions);
-        setNetWorthHistory([initialCash]);
+        // 가입 시점부터 지금까지의 자산 히스토리를 그대로 불러와서 그래프에 표시
+        const history = await fetchNetWorthHistory(account.id).catch(() => []);
+        setNetWorthHistory(history.length > 0 ? history : [initialCash]);
         setUnlockedIds(unlocked);
         if (portfolio.isNew) {
           saveSnapshot(account.id, STARTING_CASH, STARTING_CASH).catch(() => {});
@@ -2199,7 +2272,9 @@ export default function StockGame() {
   useEffect(() => {
     if (!started) return;
     const holdingsValue = totalHoldingsValue(holdings, assetsById);
-    setNetWorthHistory((prev) => [...prev, cash + holdingsValue].slice(-60));
+    // 계정 전체 히스토리(DB에서 불러온 것) 위에 실시간 틱을 계속 얹는 방식이라
+    // 60개로 잘라내지 않고, 메모리 안전장치로만 넉넉한 상한을 둠.
+    setNetWorthHistory((prev) => [...prev, cash + holdingsValue].slice(-5000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks]);
 

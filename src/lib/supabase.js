@@ -109,6 +109,19 @@ export async function saveSnapshot(userId, cash, netWorth) {
     .from('portfolio_snapshots')
     .upsert({ user_id: userId, cash, net_worth: netWorth, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
   if (error) throw error;
+  // 히스토리는 별도 append-only 테이블에 쌓아서 "가입 시점부터 지금까지" 그래프를 그릴 수 있게 함
+  const { error: histErr } = await supabase.from('networth_history').insert({ user_id: userId, cash, net_worth: netWorth });
+  if (histErr) throw histErr;
+}
+
+export async function fetchNetWorthHistory(userId) {
+  const { data, error } = await supabase
+    .from('networth_history')
+    .select('net_worth, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data || []).map((r) => Number(r.net_worth));
 }
 
 export async function upsertHolding(userId, assetId, assetType, qty, avgPrice, side = 'long', leverage = 1) {
