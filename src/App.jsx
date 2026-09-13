@@ -31,6 +31,41 @@ const STARTING_CASH = 10_000;
 
 const USD_FORMATTER = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n) => USD_FORMATTER.format(n);
+
+// 값이 바뀔 때 이전 값 → 새 값으로 롤링(카운트업/다운)되는 숫자 표시.
+function AnimatedNumber({ value, format = fmt, duration = 500 }) {
+  const [display, setDisplay] = useState(value);
+  const fromRef = useRef(value);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const from = fromRef.current;
+    const to = value;
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) {
+      setDisplay(to);
+      fromRef.current = to;
+      return;
+    }
+    const start = performance.now();
+    cancelAnimationFrame(rafRef.current);
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(from + (to - from) * eased);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        fromRef.current = to;
+        setDisplay(to);
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, duration]);
+
+  return <>{format(display)}</>;
+}
 // Coin prices can be tiny fractions of a cent (pump.fun tokens), where fmt()
 // would just show "$0.00". Show enough significant digits to be readable.
 const fmtCoinPrice = (n) => {
@@ -195,6 +230,9 @@ const LEVERAGE_SNAP_POINTS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50];
 const LEVERAGE_MIN = 1;
 // 자산군별 현실적인 레버리지 상한: 주식은 실제 신용거래 수준(4x), FX는 소매 외환 레버리지(20x), 코인은 무기한선물 수준(50x)
 const LEVERAGE_MAX_BY_TYPE = { stock: 4, fx: 20, coin: 50 };
+// 유지증거금 비율. 포지션 평가금액(증거금+평가손익)이 원래 증거금의 이 비율 아래로
+// 떨어지면 강제청산된다. 1x(현물)는 청산 대상이 아니다.
+const MAINTENANCE_MARGIN_RATIO = 0.15;
 
 function leveragePct(v, max) {
   return ((v - LEVERAGE_MIN) / (max - LEVERAGE_MIN)) * 100;
@@ -516,14 +554,22 @@ function LoadingScreen() {
 /* ---------------------------------------------------------------- */
 function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail }) {
   const [qty, setQty] = useState(1);
+  const [expanded, setExpanded] = useState(false);
+  const [side, setSide] = useState('long');
+  const [leverage, setLeverage] = useState(1);
   const change = ((stock.price - stock.open) / stock.open) * 100;
   const dirColor = stock.dir === 'down' ? 'var(--down)' : stock.dir === 'up' ? 'var(--up)' : 'var(--ink-faint)';
   const dirArrow = stock.dir === 'down' ? '▼' : stock.dir === 'up' ? '▲' : '–';
   const sectorColor = SECTOR_COLORS[stock.sector] || '#999999';
-  const cost = positionMargin(stock.price, holding?.leverage || 1, qty);
+  const leverageMax = LEVERAGE_MAX_BY_TYPE[stock.assetType] || 4;
+
+  // 이미 보유 중이면 방향/레버리지는 기존 포지션에 고정 (평단 계산이 꼬이지 않도록)
+  const effSide = holding ? holding.side || 'long' : side;
+  const effLeverage = holding ? holding.leverage || 1 : leverage;
+  const cost = positionMargin(stock.price, effLeverage, qty);
   const canBuy = cash >= cost;
   const canSell = holding && holding.qty >= qty;
-  const pnl = holding ? positionPnl(holding.side || 'long', holding.avgPrice, stock.price, holding.qty) : 0;
+  const pnl = holding ? positionPnl(effSide, holding.avgPrice, stock.price, holding.qty) : 0;
 
   return (
     <article className="stock-card" style={{ animationDelay: `${index * 0.04}s` }}>
@@ -554,7 +600,7 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
         <Sparkline history={stock.history} positive={stock.dir !== 'down'} w={320} h={44} />
       </div>
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-2 mb-2">
         <div className="font-inter text-xs text-gray-400">
           {holding ? (
             <>
@@ -568,10 +614,53 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
             '미보유'
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <QtyStepper value={qty} onChange={setQty} />
+        <div
+          className="shrink-0"
+          style={{
+            maxWidth: holding ? 0 : 160,
+            opacity: holding ? 0 : 1,
+            overflow: 'hidden',
+            transition: 'max-width 0.35s var(--ease), opacity 0.2s ease',
+          }}
+        >
           <button
-            onClick={() => onBuy(stock.id, qty)}
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1.5 font-inter font-bold text-xs rounded-full px-3.5 py-2 whitespace-nowrap"
+            style={{
+              background: expanded ? 'var(--ink)' : 'var(--glass-bg)',
+              color: expanded ? 'var(--base-bg)' : 'var(--ink-faint)',
+              border: `1px solid ${expanded ? 'var(--ink)' : 'var(--glass-border)'}`,
+              boxShadow: expanded ? '0 4px 14px rgba(0,0,0,0.12)' : '0 2px 8px rgba(0,0,0,0.05)',
+              backdropFilter: 'blur(14px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(14px) saturate(180%)',
+              transition: 'background 0.25s var(--ease), color 0.25s var(--ease), border-color 0.25s var(--ease), box-shadow 0.25s var(--ease)',
+            }}
+          >
+            {side === 'short' ? 'Short' : 'Long'} {leverage}x
+            <ChevronRight size={13} style={{ transform: `rotate(${expanded ? 90 : 0}deg)`, transition: 'transform 0.35s var(--spring)' }} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          maxHeight: !holding && expanded ? 200 : 0,
+          opacity: !holding && expanded ? 1 : 0,
+          overflow: 'hidden',
+          transition: 'max-height 0.35s var(--ease), opacity 0.25s ease',
+        }}
+      >
+        <div className="mb-4 p-3 rounded-xl">
+          <LeverageSlider value={leverage} onChange={setLeverage} max={leverageMax} leftSlot={<SidePillToggle side={side} onChange={setSide} />} />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <QtyStepper value={qty} onChange={setQty} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onBuy(stock.id, qty, { side: effSide, leverage: effLeverage })}
             disabled={!canBuy}
             className="pill-btn pill-btn-primary font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-30"
           >
@@ -586,6 +675,9 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
           </button>
         </div>
       </div>
+      {!holding && effLeverage > 1 && (
+        <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">증거금 {fmt(cost)} (명목 {fmt(stock.price * qty)})</div>
+      )}
     </article>
   );
 }
@@ -1230,12 +1322,12 @@ function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions
       <div className="flex gap-8 flex-wrap mb-6">
         <div>
           <p className="font-inter text-xs text-gray-400 mb-1">총자산</p>
-          <div className="font-inter font-bold text-2xl tabular-nums">{fmt(netWorth)}</div>
+          <div className="font-inter font-bold text-2xl tabular-nums"><AnimatedNumber value={netWorth} /></div>
         </div>
         <div>
           <p className="font-inter text-xs text-gray-400 mb-1">누적 수익</p>
           <div className="font-inter font-bold text-2xl tabular-nums" style={{ color: positive ? 'var(--up)' : 'var(--down)' }}>
-            {positive ? '+' : ''}{fmt(totalReturn)} <span className="text-sm">({positive ? '+' : ''}{totalReturnPct.toFixed(2)}%)</span>
+            {positive ? '+' : ''}<AnimatedNumber value={totalReturn} /> <span className="text-sm">({positive ? '+' : ''}{totalReturnPct.toFixed(2)}%)</span>
           </div>
         </div>
       </div>
@@ -1248,11 +1340,11 @@ function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions
       <div className="flex gap-8 mb-4 font-inter">
         <div>
           <p className="text-xs text-gray-400 mb-1">현금</p>
-          <div className="font-semibold text-sm tabular-nums">{fmt(cash)}</div>
+          <div className="font-semibold text-sm tabular-nums"><AnimatedNumber value={cash} /></div>
         </div>
         <div>
           <p className="text-xs text-gray-400 mb-1">보유 종목 평가액</p>
-          <div className="font-semibold text-sm tabular-nums">{fmt(holdingsValue)}</div>
+          <div className="font-semibold text-sm tabular-nums"><AnimatedNumber value={holdingsValue} /></div>
         </div>
       </div>
 
@@ -1965,6 +2057,7 @@ export default function StockGame() {
   const [transactions, setTransactions] = useState([]);
   const [unlockedIds, setUnlockedIds] = useState(new Set());
   const [recentUnlock, setRecentUnlock] = useState(null); // achievement just unlocked, for a toast
+  const [tradeToasts, setTradeToasts] = useState([]); // 매수/매도할 때마다 뜨는 알림
   const [dark, setDark] = useState(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('stockgame_theme') : null;
     if (saved) return saved === 'dark';
@@ -2073,6 +2166,70 @@ export default function StockGame() {
 
   // 포지션 오픈/추가 매수. opts.side/leverage는 새 포지션을 열 때만 적용되고,
   // 이미 보유 중이면 기존 포지션의 side/leverage를 그대로 따른다(평단만 갱신).
+  const pushTradeToast = (text, tone = 'neutral') => {
+    const id = `tt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setTradeToasts((prev) => [...prev, { id, text, tone }]);
+    setTimeout(() => setTradeToasts((prev) => prev.filter((t) => t.id !== id)), 2600);
+  };
+
+  // 가격이 바뀔 때마다 레버리지 포지션들의 유지증거금을 체크해서 강제청산한다.
+  // 1x(현물) 포지션은 대상이 아니고, 증거금은 이미 오픈 시점에 현금에서 빠졌으므로
+  // 청산돼도 cash가 추가로 깎이진 않는다(잃는 건 이미 뗀 증거금 전액).
+  useEffect(() => {
+    if (!started || !dataLoaded) return;
+    const toLiquidate = Object.entries(holdings).flatMap(([id, h]) => {
+      const leverage = h.leverage || 1;
+      if (leverage <= 1) return [];
+      const asset = assetsById[id];
+      if (!asset) return [];
+      const margin = positionMargin(h.avgPrice, leverage, h.qty);
+      const equity = positionValue(h, asset.price);
+      return equity <= margin * MAINTENANCE_MARGIN_RATIO ? [{ id, h, asset, margin }] : [];
+    });
+    if (toLiquidate.length === 0) return;
+
+    setHoldings((prev) => {
+      const next = { ...prev };
+      toLiquidate.forEach(({ id }) => delete next[id]);
+      return next;
+    });
+    setTransactions((prev) =>
+      [
+        ...toLiquidate.map(({ id, h, asset, margin }) => ({
+          id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: 'liquidation',
+          stockId: id,
+          stockName: asset.name,
+          assetType: asset.assetType,
+          qty: h.qty,
+          price: asset.price,
+          total: 0,
+          pnl: -margin,
+          time: Date.now(),
+          side: h.side,
+          leverage: h.leverage,
+        })),
+        ...prev,
+      ].slice(0, 50)
+    );
+
+    toLiquidate.forEach(({ id, h, asset, margin }) => {
+      pushTradeToast(`청산 · ${asset.name} ${h.side === 'short' ? 'Short' : 'Long'} ${h.leverage}x · -${fmt(margin)}`, 'liquidation');
+      if (account) {
+        upsertHolding(account.id, id, asset.assetType, 0, h.avgPrice, h.side, h.leverage).catch(() => {});
+        insertTransaction(account.id, { symbol: id, assetType: asset.assetType, side: 'liquidation', qty: h.qty, price: asset.price, pnl: -margin }).catch(() => {});
+      }
+    });
+
+    if (account) {
+      const remainingHoldings = { ...holdings };
+      toLiquidate.forEach(({ id }) => delete remainingHoldings[id]);
+      const holdingsValue = totalHoldingsValue(remainingHoldings, assetsById);
+      saveSnapshot(account.id, cash, cash + holdingsValue).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetsById]);
+
   const handleBuy = (id, qty, opts = {}) => {
     const stock = assetsById[id];
     const existing = holdings[id];
@@ -2094,6 +2251,7 @@ export default function StockGame() {
     setTransactions((prev) =>
       [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'buy', stockId: id, stockName: stock.name, assetType: stock.assetType, qty, price: stock.price, total: cost, pnl: null, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
     );
+    pushTradeToast(`매수 · ${stock.name} ${qty}${stock.assetType === 'coin' ? '개' : '주'}${leverage > 1 ? ` · ${side === 'short' ? 'Short' : 'Long'} ${leverage}x` : ''}`, 'buy');
 
     if (account) {
       const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
@@ -2124,6 +2282,7 @@ export default function StockGame() {
     setTransactions((prev) =>
       [{ id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'sell', stockId: id, stockName: stock.name, assetType: stock.assetType, qty, price: stock.price, total: proceeds, pnl, time: Date.now(), side, leverage }, ...prev].slice(0, 50)
     );
+    pushTradeToast(`매도 · ${stock.name} ${qty}${stock.assetType === 'coin' ? '개' : '주'} · ${pnl >= 0 ? '+' : ''}${fmt(pnl)}`, 'sell');
 
     if (account) {
       const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
@@ -2167,11 +2326,11 @@ export default function StockGame() {
           <div className="flex items-center gap-5">
             <div className="text-right">
               <p className="font-inter text-[11px] text-gray-400">현금</p>
-              <div className="font-inter font-semibold text-sm tabular-nums">{fmt(cash)}</div>
+              <div className="font-inter font-semibold text-sm tabular-nums"><AnimatedNumber value={cash} /></div>
             </div>
             <div className="text-right">
               <p className="font-inter text-[11px] text-gray-400">총자산</p>
-              <div className="font-inter font-semibold text-sm tabular-nums">{fmt(netWorth)}</div>
+              <div className="font-inter font-semibold text-sm tabular-nums"><AnimatedNumber value={netWorth} /></div>
             </div>
             <button
               id="theme-toggle"
@@ -2241,25 +2400,51 @@ export default function StockGame() {
 
       <Tabbar tab={tab} setTab={setTab} />
 
-      {recentUnlock && (
-        <div
-          className="fixed left-1/2 z-[60] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl bg-white"
-          style={{
-            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 92px)',
-            transform: 'translateX(-50%)',
-            border: '1px solid var(--glass-border, #eee)',
-            animation: 'fadeUp 0.3s var(--ease) both',
-          }}
-        >
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: '#F5B23422', color: '#B8860B' }}>
-            <Trophy size={16} />
+      <div
+        className="fixed left-1/2 z-[60] flex flex-col-reverse items-center gap-2 pointer-events-none"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 92px)', transform: 'translateX(-50%)' }}
+      >
+        {recentUnlock && (
+          <div
+            className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl"
+            style={{
+              background: 'var(--glass-bg)',
+              border: '1px solid var(--glass-border)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              animation: 'fadeUp 0.3s var(--ease) both',
+            }}
+          >
+            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: '#F5B23422', color: '#B8860B' }}>
+              <Trophy size={16} />
+            </div>
+            <div>
+              <p className="font-inter font-bold text-xs">도전 과제 달성! {recentUnlock.title}</p>
+              <p className="font-inter text-[11px] text-gray-400">+<AnimatedNumber value={recentUnlock.reward} /> 지급됨</p>
+            </div>
           </div>
-          <div>
-            <p className="font-inter font-bold text-xs">도전 과제 달성! {recentUnlock.title}</p>
-            <p className="font-inter text-[11px] text-gray-400">+{fmt(recentUnlock.reward)} 지급됨</p>
+        )}
+        {tradeToasts.map((t) => (
+          <div
+            key={t.id}
+            className="pointer-events-auto flex items-center px-4 py-2.5 rounded-full shadow-lg whitespace-nowrap"
+            style={{
+              background: t.tone === 'liquidation'
+                ? 'linear-gradient(180deg, rgba(220,38,38,0.55), rgba(153,27,27,0.4))'
+                : t.tone === 'sell'
+                ? 'linear-gradient(180deg, rgba(200,70,80,0.35), rgba(170,50,60,0.22))'
+                : 'linear-gradient(180deg, rgba(50,150,100,0.35), rgba(30,120,75,0.22))',
+              border: `1px solid ${t.tone === 'liquidation' ? 'rgba(220,38,38,0.5)' : t.tone === 'sell' ? 'rgba(200,70,80,0.3)' : 'rgba(50,150,100,0.3)'}`,
+              boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.35)',
+              backdropFilter: 'blur(18px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+              animation: 'toastIn 0.28s var(--ease) both',
+            }}
+          >
+            <span className="font-inter font-bold text-xs" style={{ color: t.tone === 'liquidation' ? '#fff' : 'inherit' }}>{t.text}</span>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       {detailStock && (
         <StockDetailModal

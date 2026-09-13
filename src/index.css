@@ -243,3 +243,13 @@ html.dark .tabbar::after {
 html.dark .auth-input { border-bottom-color: #35353a; }
 
 input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* ===== 스크롤바 숨김 (스크롤 기능은 유지) ===== */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* Chrome/Safari */
+}
