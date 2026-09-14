@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { TrendingUp, LayoutDashboard, Newspaper, Users, Trophy, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
-import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, fetchNetWorthHistory, upsertHolding, insertTransaction, fetchUnlockedAchievements, unlockAchievement } from './lib/supabase';
+import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, fetchNetWorthHistory, upsertHolding, insertTransaction, fetchUnlockedAchievements, unlockAchievement, fetchHoldingsForUsers } from './lib/supabase';
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
 import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
 import { useFxRates } from './lib/fx';
@@ -1815,19 +1815,42 @@ function ForumSection({ account }) {
 }
 
 function RankingSection({ account, assetsById, achievements }) {
-  const [rows, setRows] = useState([]);
+  const [snapRows, setSnapRows] = useState([]);
+  const [holdingsByUser, setHoldingsByUser] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeUser, setActiveUser] = useState(null); // { userId, nickname }
 
   useEffect(() => {
     let cancelled = false;
-    fetchRanking()
-      .then((data) => { if (!cancelled) setRows(data); })
-      .catch((err) => { if (!cancelled) setError(err.message || '랭킹을 불러오지 못했어요.'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    (async () => {
+      try {
+        const snap = await fetchRanking();
+        const holdings = await fetchHoldingsForUsers(snap.map((r) => r.user_id));
+        if (cancelled) return;
+        setSnapRows(snap);
+        setHoldingsByUser(holdings);
+      } catch (err) {
+        if (!cancelled) setError(err.message || '랭킹을 불러오지 못했어요.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
+
+  // 저장된 net_worth 컬럼은 매매 시점에만 갱신되는 스냅샷이라 시세가 움직이면(특히
+  // 레버리지 포지션) 실제 자산과 어긋난 값이 그대로 남을 수 있다. 실제 보유 자산과
+  // 현재가 기준으로 매번 다시 계산해서 정렬까지 새로 한다 — 네트워크 재요청 없이,
+  // 가격이 바뀔 때마다(assetsById 갱신) 순수 계산만 다시 돈다.
+  const rows = useMemo(() => {
+    const live = snapRows.map((r) => {
+      const holdingsValue = totalHoldingsValue(holdingsByUser[r.user_id] || {}, assetsById);
+      return { ...r, net_worth: Number(r.cash) + holdingsValue };
+    });
+    live.sort((a, b) => b.net_worth - a.net_worth);
+    return live;
+  }, [snapRows, holdingsByUser, assetsById]);
 
   if (loading) return <p className="font-inter text-sm text-gray-300 py-10 text-center">불러오는 중...</p>;
   if (error) return <p className="font-inter text-xs text-red-500 py-6 text-center">{error}</p>;
