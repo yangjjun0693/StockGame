@@ -35,6 +35,10 @@ export const CURATED_STOCKS = [
   { id: 'spcx', symbol: 'SPCX', name: 'SpaceX', sector: '항공·우주', desc: '머스크형 화성 ㄱㄱ' },
   { id: 'rklb', symbol: 'RKLB', name: 'Rocket Lab', sector: '항공·우주', desc: '로케트 발싸' },
   { id: 'ba', symbol: 'BA', name: 'Boeing', sector: '항공·우주', desc: '떴다 떴다 비행기' },
+  { id: 'spy', symbol: 'SPY', name: 'SPDR S&P 500 ETF', sector: 'ETF', desc: 'S&P500 통째로.' },
+  { id: 'qqq', symbol: 'QQQ', name: 'Invesco QQQ Trust', sector: 'ETF', desc: '나스닥100 통째로.' },
+  { id: 'soxl', symbol: 'SOXL', name: 'Direxion Semiconductor Bull 3X', sector: 'ETF', desc: '반도체 3배 레버리지. 무섭다.' },
+  { id: 'tqqq', symbol: 'TQQQ', name: 'ProShares UltraPro QQQ', sector: 'ETF', desc: '나스닥100 3배 레버리지.' },
 ];
 
 async function fetchQuote(symbol) {
