@@ -67,6 +67,25 @@ function setStoredAccount(account) {
 // see the note above about accounts/RLS.
 // ---------------------------------------------------------------------
 
+// 랭킹용: 여러 유저의 holdings를 한 번에 가져와서 { user_id: { asset_id: {...} } } 형태로 묶어준다.
+// 랭킹은 저장된 net_worth 컬럼을 그대로 믿지 않고 이걸로 매번 라이브 재계산한다 —
+// 그 컬럼은 매매할 때만 갱신되므로, 가격이 움직이거나(특히 레버리지 포지션) 과거 계산식이
+// 바뀐 적이 있으면 실제 자산과 어긋난 값이 그대로 남아있을 수 있기 때문.
+export async function fetchHoldingsForUsers(userIds) {
+  if (!userIds || userIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('holdings')
+    .select('user_id, asset_id, qty, avg_price, side, leverage')
+    .in('user_id', userIds);
+  if (error) throw error;
+  const byUser = {};
+  (data || []).forEach((r) => {
+    if (!byUser[r.user_id]) byUser[r.user_id] = {};
+    byUser[r.user_id][r.asset_id] = { qty: Number(r.qty), avgPrice: Number(r.avg_price), side: r.side || 'long', leverage: Number(r.leverage) || 1 };
+  });
+  return byUser;
+}
+
 export async function fetchPortfolio(userId) {
   const [{ data: snap, error: snapErr }, { data: holdingsRows, error: hErr }, { data: txRows, error: tErr }] = await Promise.all([
     supabase.from('portfolio_snapshots').select('cash, net_worth').eq('user_id', userId).maybeSingle(),
