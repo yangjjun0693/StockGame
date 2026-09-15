@@ -905,6 +905,7 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
 const MARKET_FILTERS = [
   { id: 'all', label: '전체' },
   { id: 'stock', label: '주식' },
+  { id: 'etf', label: 'ETF' },
   { id: 'coin', label: '코인' },
   { id: 'fx', label: 'FX' },
 ];
@@ -942,7 +943,10 @@ function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDet
 
   const assets = useMemo(() => {
     let list = [...stocks, ...coins, ...fx];
-    if (filter !== 'all') list = list.filter((a) => a.assetType === filter);
+    if (filter === 'etf') list = list.filter((a) => a.sector === 'ETF');
+    else if (filter === 'stock') list = list.filter((a) => a.assetType === 'stock' && a.sector !== 'ETF');
+    else if (filter !== 'all') list = list.filter((a) => a.assetType === filter);
+    else list = list.filter((a) => a.sector !== 'ETF'); // 전체 보기에선 ETF는 따로 칩으로 빼놨으니 중복 노출 안 함
 
     // BTC/ETH/SOL (CoinGecko "major" tier) are always pinned above meme
     // coins and stocks, regardless of the chosen sort — only their
@@ -989,6 +993,9 @@ function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDet
         </div>
       ) : (
         <div className="flex flex-col gap-10">
+          {filter === 'etf' && (
+            <p className="font-inter text-xs text-gray-400 -mb-6">레버리지 ETF는 그 자체로 이미 배율이 걸려있으니, 여기에 거래 레버리지까지 또 곱해서 넣지 않게 주의하세요.</p>
+          )}
           {assets.map((a, i) => (
             a.assetType === 'coin'
               ? <CoinCard key={a.id} index={i} coin={a} holding={holdings[a.id]} cash={cash} onBuy={onBuy} onSell={onSell} onOpenDetail={onOpenDetail} />
