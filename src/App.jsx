@@ -1230,13 +1230,21 @@ function NetWorthChart({ history }) {
 }
 
 function TransactionsSection({ transactions }) {
+  const [open, setOpen] = useState(false);
   return (
     <div>
-      <p className="font-inter font-medium text-xs text-gray-400 mb-3">체결 내역</p>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between mb-3 font-inter font-medium text-xs text-gray-400"
+      >
+        <span>체결 내역 {transactions.length > 0 && `(${transactions.length})`}</span>
+        <ChevronRight size={13} style={{ transform: `rotate(${open ? 90 : 0}deg)`, transition: 'transform 0.35s var(--spring)' }} />
+      </button>
       {transactions.length === 0 ? (
         <div className="font-inter text-sm text-gray-300 py-4">아직 체결된 거래가 없어요.</div>
       ) : (
-        <div>
+        <div style={{ maxHeight: open ? 4000 : 0, opacity: open ? 1 : 0, overflow: 'hidden', transition: 'max-height 0.4s var(--ease), opacity 0.3s var(--ease)' }}>
           {transactions.map((t) => (
             <div key={t.id} className="grid gap-3 py-2.5 border-b border-gray-50 items-center font-inter" style={{ gridTemplateColumns: '0.7fr 1.3fr 1fr 1fr 1fr' }}>
               <span
@@ -1363,7 +1371,8 @@ function AchievementCard({ achievement, unlocked, ctx }) {
   );
 }
 
-function AchievementsTab({ achievements, unlockedIds, cash, holdings, assetsById, transactions }) {
+function AchievementsSection({ achievements, unlockedIds, cash, holdings, assetsById, transactions }) {
+  const [open, setOpen] = useState(false);
   const netWorth = cash + totalHoldingsValue(holdings, assetsById);
   const realizedPnl = transactions.reduce((sum, t) => sum + (t.type === 'sell' && typeof t.pnl === 'number' ? t.pnl : 0), 0);
   const assetTypesTraded = new Set(transactions.map((t) => t.assetType).filter(Boolean));
@@ -1373,34 +1382,45 @@ function AchievementsTab({ achievements, unlockedIds, cash, holdings, assetsById
   const unlockedCount = achievements.filter((a) => unlockedIds.has(a.id)).length;
 
   return (
-    <div className="px-5 pb-8 space-y-6">
-      <div className="rounded-xl p-4 flex items-center justify-between bg-gray-50">
-        <div>
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full rounded-xl p-4 flex items-center justify-between bg-gray-50"
+      >
+        <div className="text-left">
           <p className="font-inter font-bold text-sm">달성한 도전 과제</p>
           <p className="font-inter text-xs text-gray-400 mt-0.5">거래하고, 수익 내고, 포트폴리오를 키우면서 보상을 받아보세요.</p>
         </div>
-        <p className="font-myeongjo font-bold text-2xl tabular-nums shrink-0 ml-3">{unlockedCount}/{achievements.length}</p>
-      </div>
+        <div className="flex items-center gap-2 shrink-0 ml-3">
+          <p className="font-myeongjo font-bold text-2xl tabular-nums">{unlockedCount}/{achievements.length}</p>
+          <ChevronRight size={14} style={{ transform: `rotate(${open ? 90 : 0}deg)`, transition: 'transform 0.35s var(--spring)' }} />
+        </div>
+      </button>
 
-      {ACHIEVEMENT_CATEGORIES.map((category) => {
-        const list = achievements.filter((a) => a.category === category);
-        if (list.length === 0) return null;
-        return (
-          <div key={category}>
-            <h2 className="font-inter font-bold text-xs text-gray-400 mb-2.5 tracking-wide">{category.toUpperCase()}</h2>
-            <div className="space-y-2.5">
-              {list.map((a) => (
-                <AchievementCard key={a.id} achievement={a} unlocked={unlockedIds.has(a.id)} ctx={ctx} />
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <div style={{ maxHeight: open ? 8000 : 0, opacity: open ? 1 : 0, overflow: 'hidden', transition: 'max-height 0.4s var(--ease), opacity 0.3s var(--ease)' }}>
+        <div className="space-y-6 pt-6">
+          {ACHIEVEMENT_CATEGORIES.map((category) => {
+            const list = achievements.filter((a) => a.category === category);
+            if (list.length === 0) return null;
+            return (
+              <div key={category}>
+                <h2 className="font-inter font-bold text-xs text-gray-400 mb-2.5 tracking-wide">{category.toUpperCase()}</h2>
+                <div className="space-y-2.5">
+                  {list.map((a) => (
+                    <AchievementCard key={a.id} achievement={a} unlocked={unlockedIds.has(a.id)} ctx={ctx} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
 
-function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions, onBuy, onSell }) {
+function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions, onBuy, onSell, achievements, unlockedIds }) {
   const holdingsList = Object.entries(holdings)
     .map(([id, h]) => {
       const stock = assetById[id];
@@ -1479,6 +1499,10 @@ function DashboardTab({ cash, holdings, assetById, netWorthHistory, transactions
       )}
 
       <TransactionsSection transactions={transactions} />
+
+      <div className="mt-8">
+        <AchievementsSection achievements={achievements} unlockedIds={unlockedIds} cash={cash} holdings={holdings} assetsById={assetById} transactions={transactions} />
+      </div>
     </div>
   );
 }
@@ -2068,7 +2092,6 @@ const TABS = [
   { id: 'market', label: '마켓', icon: TrendingUp },
   { id: 'news', label: '뉴스', icon: Newspaper },
   { id: 'community', label: '커뮤니티', icon: Users },
-  { id: 'achievements', label: '도전과제', icon: Trophy },
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
 ];
 
@@ -2503,16 +2526,6 @@ export default function StockGame() {
           )}
           {tab === 'news' && <NewsTab articles={news} />}
           {tab === 'community' && <CommunityTab account={account} assetsById={assetsById} achievements={achievements} />}
-          {tab === 'achievements' && (
-            <AchievementsTab
-              achievements={achievements}
-              unlockedIds={unlockedIds}
-              cash={cash}
-              holdings={holdings}
-              assetsById={assetsById}
-              transactions={transactions}
-            />
-          )}
           {tab === 'dashboard' && (
             <DashboardTab
               cash={cash}
@@ -2522,6 +2535,8 @@ export default function StockGame() {
               transactions={transactions}
               onBuy={handleBuy}
               onSell={handleSell}
+              achievements={achievements}
+              unlockedIds={unlockedIds}
             />
           )}
         </div>
