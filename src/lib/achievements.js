@@ -190,7 +190,7 @@ export function buildAchievements(startingCash) {
       reward: u(0.05),
       target: 1,
       progress: (ctx) => ctx.maxLeverageUsed,
-      check: (ctx) => ctx.maxLeverageUsed >= 2,
+      check: (ctx) => ctx.maxLeverageUsed >= 50,
     },
     {
       id: 'short_debut',

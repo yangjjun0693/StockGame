@@ -2326,12 +2326,14 @@ export default function StockGame() {
 
   useEffect(() => {
     if (!started) return;
+	if (Object.keys(assetsById).length === 0) return;
+
     const holdingsValue = totalHoldingsValue(holdings, assetsById);
     // 계정 전체 히스토리(DB에서 불러온 것) 위에 실시간 틱을 계속 얹는 방식이라
     // 60개로 잘라내지 않고, 메모리 안전장치로만 넉넉한 상한을 둠.
     setNetWorthHistory((prev) => [...prev, cash + holdingsValue].slice(-5000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stocks]);
+  }, [assetsById, holdings, cash, started]);
 
   // 포지션 오픈/추가 매수. opts.side/leverage는 새 포지션을 열 때만 적용되고,
   // 이미 보유 중이면 기존 포지션의 side/leverage를 그대로 따른다(평단만 갱신).
@@ -2386,7 +2388,7 @@ export default function StockGame() {
       pushTradeToast(`청산 · ${asset.name} ${h.side === 'short' ? 'Short' : 'Long'} ${h.leverage}x · -${fmt(margin)}`, 'liquidation');
       if (account) {
         upsertHolding(account.id, id, asset.assetType, 0, h.avgPrice, h.side, h.leverage).catch(() => {});
-        insertTransaction(account.id, { symbol: id, assetType: asset.assetType, side: 'liquidation', qty: h.qty, price: asset.price, pnl: -margin }).catch(() => {});
+        insertTransaction(account.id, { symbol: id, assetType: asset.assetType, side: 'liquidation', qty: h.qty, price: asset.price, pnl: -margin, total:0, tradeSide: h.side, leverage: h.leverage, stockName: asset.name, }).catch(() => {});
       }
     });
 
@@ -2425,7 +2427,7 @@ export default function StockGame() {
     if (account) {
       const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
       upsertHolding(account.id, id, stock.assetType, newQty, newAvg, side, leverage).catch(() => {});
-      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'buy', qty, price: stock.price }).catch(() => {});
+      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'buy', qty, price: stock.price, total: cost, tradeSide: side, leverage, stockName: stock.name,}).catch(() => {});
       saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
     }
   };
@@ -2456,7 +2458,7 @@ export default function StockGame() {
     if (account) {
       const holdingsValue = totalHoldingsValue(newHoldings, assetsById);
       upsertHolding(account.id, id, stock.assetType, remaining, cur.avgPrice, side, leverage).catch(() => {});
-      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'sell', qty, price: stock.price, pnl }).catch(() => {});
+      insertTransaction(account.id, { symbol: id, assetType: stock.assetType, side: 'sell', qty, price: stock.price, pnl, total: proceeds, tradeSide: side, leverage, stockName: stock.name,}).catch(() => {});
       saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
     }
   };

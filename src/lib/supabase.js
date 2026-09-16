@@ -106,13 +106,17 @@ export async function fetchPortfolio(userId) {
     id: r.id,
     type: r.side,
     stockId: r.symbol,
-    stockName: r.symbol,
+    stockName: r. stock_name || r.symbol,
     assetType: r.asset_type,
     qty: Number(r.qty),
     price: Number(r.price),
-    total: Number(r.qty) * Number(r.price),
+    total: r.total != null
+	  ? Number(r.total)
+	  : Number(r.qty) * Number(r.pnl),
     pnl: r.pnl === null ? null : Number(r.pnl),
     time: new Date(r.created_at).getTime(),
+	  side: r.trade_side || 'long',
+	  levarage: Number(r.leverage) || 1,
   }));
 
   return {
@@ -158,8 +162,8 @@ export async function upsertHolding(userId, assetId, assetType, qty, avgPrice, s
   if (error) throw error;
 }
 
-export async function insertTransaction(userId, { symbol, assetType, side, qty, price, pnl = null }) {
-  const { error } = await supabase.from('transactions').insert({ user_id: userId, symbol, asset_type: assetType, side, qty, price, pnl });
+export async function insertTransaction(userId, { symbol, assetType, side, qty, price, pnl = null, tota = null, tradeSide = 'long', leverage = 1, stockName = null,}) {
+  const { error } = await supabase.from('transactions').insert({ user_id: userId, symbol, asset_type: assetType, side, qty, price, pnl, total, trade_side: tradeSide, levarge, stock_name: stockName,});
   if (error) throw error;
 }
 
