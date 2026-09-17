@@ -179,7 +179,7 @@ function ChartModeToggle({ mode, onChange }) {
       <button
         type="button"
         onClick={() => onChange('simple')}
-        className="relative z-10 font-inter font-bold text-[10px] rounded-full py-1 transition-colors duration-200"
+        className="segment-btn relative z-10 font-inter font-bold text-[10px] rounded-full py-1 transition-colors duration-200"
         style={{ width: segW, color: isTv ? 'var(--ink-faint)' : 'var(--base-bg)' }}
       >
         간단
@@ -187,7 +187,7 @@ function ChartModeToggle({ mode, onChange }) {
       <button
         type="button"
         onClick={() => onChange('tv')}
-        className="relative z-10 font-inter font-bold text-[10px] rounded-full py-1 transition-colors duration-200"
+        className="segment-btn relative z-10 font-inter font-bold text-[10px] rounded-full py-1 transition-colors duration-200"
         style={{ width: segW, color: isTv ? 'var(--base-bg)' : 'var(--ink-faint)' }}
       >
         TV
@@ -280,7 +280,7 @@ function SidePillToggle({ side, onChange }) {
       <button
         type="button"
         onClick={() => onChange('long')}
-        className="relative z-10 font-inter font-bold text-xs rounded-full py-1.5 transition-colors duration-200"
+        className="segment-btn relative z-10 font-inter font-bold text-xs rounded-full py-1.5 transition-colors duration-200"
         style={{ width: 52, color: isShort ? 'var(--ink-faint)' : '#fff', textShadow: isShort ? 'none' : '0 1px 2px rgba(0,0,0,0.15)' }}
       >
         Long
@@ -288,7 +288,7 @@ function SidePillToggle({ side, onChange }) {
       <button
         type="button"
         onClick={() => onChange('short')}
-        className="relative z-10 font-inter font-bold text-xs rounded-full py-1.5 transition-colors duration-200"
+        className="segment-btn relative z-10 font-inter font-bold text-xs rounded-full py-1.5 transition-colors duration-200"
         style={{ width: 52, color: isShort ? '#fff' : 'var(--ink-faint)', textShadow: isShort ? '0 1px 2px rgba(0,0,0,0.15)' : 'none' }}
       >
         Short
@@ -641,7 +641,7 @@ function StockCard({ stock, index, holding, cash, onBuy, onSell, onOpenDetail })
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1.5 font-inter font-bold text-xs rounded-full px-3.5 py-2 whitespace-nowrap"
+            className="pill-btn flex items-center gap-1.5 font-inter font-bold text-xs rounded-full px-3.5 py-2 whitespace-nowrap"
             style={{
               background: expanded ? 'var(--ink)' : 'var(--glass-bg)',
               color: expanded ? 'var(--base-bg)' : 'var(--ink-faint)',
@@ -853,7 +853,7 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
                     <button
                       onClick={() => onBuy(stock.id, coinBuyQty, { side, leverage })}
                       disabled={!canBuy}
-                      className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30"
+                      className="pill-btn pill-btn-primary font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30"
                     >
                       매수
                     </button>
@@ -866,7 +866,7 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
                           key={pct}
                           onClick={() => onSell(stock.id, sellQty)}
                           disabled={!holding || sellQty <= 0}
-                          className="font-inter font-medium text-xs border border-gray-200 rounded-full px-3 py-2 disabled:opacity-30"
+                          className="pill-btn font-inter font-medium text-xs border border-gray-200 rounded-full px-3 py-2 disabled:opacity-30"
                         >
                           {pct}% 매도
                         </button>
@@ -885,8 +885,8 @@ function StockDetailModal({ stock, holding, cash, dark, onBuy, onSell, onClose }
                 <div className="flex items-center justify-between gap-3">
                   <QtyStepper value={qty} onChange={setQty} />
                   <div className="flex gap-2">
-                    <button onClick={() => onBuy(stock.id, qty, { side, leverage })} disabled={!canBuy} className="font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
-                    <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
+                    <button onClick={() => onBuy(stock.id, qty, { side, leverage })} disabled={!canBuy} className="pill-btn pill-btn-primary font-inter font-medium text-sm text-white bg-gray-900 rounded-full px-5 py-2.5 disabled:opacity-30">매수</button>
+                    <button onClick={() => onSell(stock.id, qty)} disabled={!canSell} className="pill-btn font-inter font-medium text-sm border border-gray-200 rounded-full px-5 py-2.5 disabled:opacity-30">매도</button>
                   </div>
                 </div>
                 <div className="text-right text-[11px] text-gray-400 font-inter mt-2 tabular-nums">증거금 {fmt(cost)}{effLeverage > 1 ? ` (명목 ${fmt(stock.price * qty)})` : ''}</div>
@@ -967,7 +967,7 @@ function MarketTab({ stocks, coins, fx, holdings, cash, onBuy, onSell, onOpenDet
                 setFilter(f.id);
                 if (f.id === 'coin' && sortKey === 'default') setSortKey('mcap_desc');
               }}
-              className="font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+              className="chip-tag font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
               style={filter === f.id
                 ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
                 : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
@@ -1236,7 +1236,7 @@ function TransactionsSection({ transactions }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between mb-3 font-inter font-medium text-xs text-gray-400"
+        className="accordion-toggle w-full flex items-center justify-between mb-3 font-inter font-medium text-xs text-gray-400"
       >
         <span>체결 내역 {transactions.length > 0 && `(${transactions.length})`}</span>
         <ChevronRight size={13} style={{ transform: `rotate(${open ? 90 : 0}deg)`, transition: 'transform 0.35s var(--spring)' }} />
@@ -1386,7 +1386,7 @@ function AchievementsSection({ achievements, unlockedIds, cash, holdings, assets
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full rounded-xl p-4 flex items-center justify-between bg-gray-50"
+        className="accordion-toggle w-full rounded-xl p-4 flex items-center justify-between bg-gray-50"
       >
         <div className="text-left">
           <p className="font-inter font-bold text-sm">달성한 도전 과제</p>
@@ -1603,7 +1603,7 @@ function ForumComposer({ onSubmit, onCancel, submitting }) {
       />
       <div className="flex justify-end gap-2 pt-1">
         <button type="button" onClick={onCancel} className="font-inter font-medium text-xs text-gray-400 hover:text-gray-600 rounded-full px-4 py-2 transition-colors">취소</button>
-        <button type="submit" disabled={submitting} className="font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-50">
+        <button type="submit" disabled={submitting} className="pill-btn pill-btn-primary font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-2 disabled:opacity-50">
           {submitting ? '등록 중...' : '등록'}
         </button>
       </div>
@@ -1685,7 +1685,7 @@ function PostDetailModal({ post, account, onClose, onDeleted }) {
           <button
             onClick={handleLike}
             disabled={!account}
-            className="inline-flex items-center gap-1.5 font-inter font-medium text-xs px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+            className="pill-btn inline-flex items-center gap-1.5 font-inter font-medium text-xs px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
             style={liked ? { background: 'var(--down-bg)', color: 'var(--down)', borderColor: 'transparent' } : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
           >
             <Heart size={13} fill={liked ? 'currentColor' : 'none'} /> {likesCount}
@@ -1725,7 +1725,7 @@ function PostDetailModal({ post, account, onClose, onDeleted }) {
                 onChange={(e) => setCommentText(e.target.value)}
                 className="flex-1 px-3.5 py-2 rounded-full border border-gray-200 font-inter text-xs outline-none focus:border-gray-400 transition-colors"
               />
-              <button type="submit" disabled={posting || !commentText.trim()} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-gray-900 text-white disabled:opacity-30">
+              <button type="submit" disabled={posting || !commentText.trim()} className="pill-btn w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-gray-900 text-white disabled:opacity-30">
                 <Send size={13} />
               </button>
             </form>
@@ -1786,7 +1786,7 @@ function ForumSection({ account }) {
             <button
               key={c.id}
               onClick={() => setCategory(c.id)}
-              className="font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+              className="chip-tag font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
               style={category === c.id
                 ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
                 : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
@@ -2071,7 +2071,7 @@ function CommunityTab({ account, assetsById, achievements }) {
           <button
             key={s.id}
             onClick={() => setSub(s.id)}
-            className="font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+            className="chip-tag font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
             style={sub === s.id
               ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
               : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
