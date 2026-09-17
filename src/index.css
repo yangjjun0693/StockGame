@@ -32,6 +32,28 @@ html.dark {
   --down-bg: rgba(255, 107, 97, 0.12);
 }
 
+/* ===== G3 corners (squircle / superellipse) ===== */
+/* Chromium(Blink) supports the corner-shape property; squircle radii render ~half the
+   visual size of a circular radius, so we bump up the border-radius tokens when it's
+   available. Falls back to normal rounded corners everywhere else (Safari/Firefox).
+   Pills/circles (rounded-full, tabbar) are excluded — squircle distorts fully-round
+   shapes, so they stay corner-shape: round. */
+@supports (corner-shape: squircle) {
+  *, *::before, *::after {
+    corner-shape: squircle;
+  }
+  .rounded-md   { border-radius: 12px !important; }
+  .rounded-lg   { border-radius: 16px !important; }
+  .rounded-xl   { border-radius: 24px !important; }
+  .rounded-2xl  { border-radius: 32px !important; }
+
+  .rounded-full,
+  .tabbar, .tabbar-highlight, .tab,
+  .tabbar::before, .tabbar::after {
+    corner-shape: round !important;
+  }
+}
+
 * { box-sizing: border-box; }
 html, body { min-height: 100vh; }
 body {
