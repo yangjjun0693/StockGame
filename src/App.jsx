@@ -6,6 +6,7 @@ import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
 import { useFxRates } from './lib/fx';
 import { useCryptoNews } from './lib/cryptonews';
 import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
+import { searchUsers, fetchConversations, fetchThread, sendMessage as sendDirectMessage, markThreadRead, fetchUnreadCount as fetchUnreadMessageCount } from './lib/messages';
 import { buildAchievements, ACHIEVEMENT_CATEGORIES } from './lib/achievements';
 
 // poesi의 팔레트 태그를 이식한 섹터 컬러 (실제 종목 12개 + FX 묶음)
@@ -1557,6 +1558,7 @@ function NewsTab({ articles }) {
 const COMMUNITY_SUBTABS = [
   { id: 'forum', label: '포럼' },
   { id: 'ranking', label: '랭킹' },
+  { id: 'dm', label: '메시지' },
 ];
 
 function timeAgoAbs(iso, now) {
@@ -1847,7 +1849,7 @@ function ForumSection({ account }) {
   );
 }
 
-function RankingSection({ account, assetsById, achievements }) {
+function RankingSection({ account, assetsById, achievements, onMessage }) {
   const [snapRows, setSnapRows] = useState([]);
   const [holdingsByUser, setHoldingsByUser] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1915,13 +1917,14 @@ function RankingSection({ account, assetsById, achievements }) {
           assetsById={assetsById}
           achievements={achievements}
           onClose={() => setActiveUser(null)}
+          onMessage={account && account.id !== activeUser.userId ? () => { onMessage(activeUser.userId, activeUser.nickname); setActiveUser(null); } : null}
         />
       )}
     </div>
   );
 }
 
-function UserProfileModal({ userId, nickname, assetsById, achievements, onClose }) {
+function UserProfileModal({ userId, nickname, assetsById, achievements, onClose, onMessage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [portfolio, setPortfolio] = useState(null); // { cash, holdings, transactions }
@@ -1978,8 +1981,20 @@ function UserProfileModal({ userId, nickname, assetsById, achievements, onClose 
           <X size={18} />
         </button>
 
-        <p className="font-inter font-medium text-xs text-gray-400 mb-1">유저 프로필</p>
-        <h2 className="font-myeongjo font-bold text-xl mb-5 pr-6">{nickname}</h2>
+        <div className="flex items-center justify-between gap-3 pr-6 mb-5">
+          <div>
+            <p className="font-inter font-medium text-xs text-gray-400 mb-1">유저 프로필</p>
+            <h2 className="font-myeongjo font-bold text-xl">{nickname}</h2>
+          </div>
+          {onMessage && (
+            <button
+              onClick={onMessage}
+              className="pill-btn shrink-0 inline-flex items-center gap-1.5 font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-3.5 py-2 hover:opacity-90 transition-opacity"
+            >
+              <MessageCircle size={13} /> 메시지
+            </button>
+          )}
+        </div>
 
         {loading ? (
           <p className="font-inter text-sm text-gray-300 py-10 text-center">불러오는 중...</p>
@@ -2062,8 +2077,246 @@ function UserProfileModal({ userId, nickname, assetsById, achievements, onClose 
   );
 }
 
+function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead }) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = (showLoading) => {
+      if (showLoading) setLoading(true);
+      return fetchThread(account.id, partnerId)
+        .then((rows) => { if (!cancelled) setMessages(rows); })
+        .catch((err) => { if (!cancelled) setError(err.message || '메시지를 불러오지 못했어요.'); })
+        .finally(() => { if (!cancelled && showLoading) setLoading(false); });
+    };
+
+    const readAndNotify = () => markThreadRead(account.id, partnerId).then(onRead).catch(() => {});
+
+    load(true).then(readAndNotify);
+    const interval = setInterval(() => { load(false).then(readAndNotify); }, 4000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [account.id, partnerId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length]);
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      const msg = await sendDirectMessage(account.id, partnerId, text.trim());
+      setMessages((prev) => [...prev, msg]);
+      setText('');
+    } catch (err) {
+      setError(err.message || '전송에 실패했어요.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const now = Date.now();
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center px-5">
+      <div className="modal-backdrop absolute inset-0 bg-black/20 backdrop-blur-sm" />
+      <div onClick={(e) => e.stopPropagation()} className="modal-box relative bg-white w-full max-w-sm rounded-2xl p-7 shadow-xl h-[70vh] flex flex-col">
+        <button onClick={onClose} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors">
+          <X size={18} />
+        </button>
+
+        <p className="font-inter font-medium text-xs text-gray-400 mb-1">다이렉트 메시지</p>
+        <h2 className="font-myeongjo font-bold text-xl mb-4 pr-6">{partnerNickname}</h2>
+
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pr-1 -mr-1">
+          {loading ? (
+            <p className="font-inter text-xs text-gray-300 text-center py-6">불러오는 중...</p>
+          ) : messages.length === 0 ? (
+            <p className="font-inter text-xs text-gray-300 text-center py-6">아직 메시지가 없어요. 먼저 인사를 건네보세요.</p>
+          ) : (
+            messages.map((m) => {
+              const mine = m.sender_id === account.id;
+              return (
+                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div className="max-w-[75%]">
+                    <div
+                      className="font-inter text-xs leading-5 px-3.5 py-2 rounded-2xl whitespace-pre-wrap break-words"
+                      style={mine ? { background: 'var(--ink)', color: 'var(--base-bg)' } : { background: '#F3F4F6', color: 'var(--ink)' }}
+                    >
+                      {m.content}
+                    </div>
+                    <p className={`font-inter text-[10px] text-gray-300 mt-1 ${mine ? 'text-right' : ''}`}>{timeAgoAbs(m.created_at, now)}</p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {error && <p className="font-inter text-[11px] text-red-500 mt-2">{error}</p>}
+
+        <form onSubmit={handleSend} className="flex items-center gap-2 pt-4 mt-2 border-t border-gray-100 shrink-0">
+          <input
+            type="text"
+            placeholder="메시지를 입력하세요"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={2000}
+            className="flex-1 px-3.5 py-2 rounded-full border border-gray-200 font-inter text-xs outline-none focus:border-gray-400 transition-colors"
+          />
+          <button type="submit" disabled={sending || !text.trim()} className="pill-btn w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-gray-900 text-white disabled:opacity-30">
+            <Send size={13} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DMSection({ account, onOpenThread }) {
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (!account) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    fetchConversations(account.id)
+      .then((rows) => { if (!cancelled) setConversations(rows); })
+      .catch((err) => { if (!cancelled) setError(err.message || '대화 목록을 불러오지 못했어요.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const q = query.trim();
+    if (!q) { setResults([]); return; }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(() => {
+      searchUsers(q, account?.id)
+        .then((rows) => { if (!cancelled) setResults(rows); })
+        .catch(() => { if (!cancelled) setResults([]); })
+        .finally(() => { if (!cancelled) setSearching(false); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query, searchOpen, account?.id]);
+
+  if (!account) {
+    return <p className="font-inter text-sm text-gray-300 py-10 text-center">로그인하면 친구와 메시지를 주고받을 수 있어요.</p>;
+  }
+
+  const now = Date.now();
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <p className="font-inter text-xs text-gray-400">친구에게 다이렉트 메시지를 보내보세요.</p>
+        <button
+          onClick={() => { setSearchOpen((v) => !v); setQuery(''); setResults([]); }}
+          className="font-inter font-medium text-xs text-white bg-gray-900 rounded-full px-4 py-1.5 hover:opacity-90 transition-opacity"
+        >
+          {searchOpen ? '닫기' : '새 메시지'}
+        </button>
+      </div>
+
+      {searchOpen && (
+        <div className="bg-gray-50 rounded-xl p-4 mb-6">
+          <input
+            type="text"
+            autoFocus
+            placeholder="닉네임 또는 아이디로 검색"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 font-inter text-sm outline-none focus:border-gray-400 transition-colors bg-white mb-2"
+          />
+          {searching ? (
+            <p className="font-inter text-xs text-gray-300 text-center py-3">검색 중...</p>
+          ) : query.trim() && results.length === 0 ? (
+            <p className="font-inter text-xs text-gray-300 text-center py-3">일치하는 유저가 없어요.</p>
+          ) : (
+            <div className="space-y-1">
+              {results.map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => { setSearchOpen(false); setQuery(''); onOpenThread(u.id, u.nickname || u.username); }}
+                  className="w-full text-left font-inter text-sm px-3 py-2 rounded-lg hover:bg-white transition-colors"
+                >
+                  {u.nickname || u.username}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="font-inter text-sm text-gray-300 py-10 text-center">불러오는 중...</p>
+      ) : error ? (
+        <p className="font-inter text-xs text-red-500 py-6 text-center">{error}</p>
+      ) : conversations.length === 0 ? (
+        <p className="font-inter text-sm text-gray-300 py-10 text-center">아직 대화가 없어요. "새 메시지"로 친구에게 먼저 말을 걸어보세요.</p>
+      ) : (
+        conversations.map((c) => (
+          <button
+            key={c.partnerId}
+            onClick={() => onOpenThread(c.partnerId, c.nickname)}
+            className="w-full flex items-center gap-3 py-3 border-b border-gray-50 text-left hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="font-inter font-semibold text-sm truncate">{c.nickname}</span>
+                {c.unreadCount > 0 && (
+                  <span className="font-inter font-bold text-[10px] text-white rounded-full px-1.5 py-0.5" style={{ background: 'var(--down)' }}>
+                    {c.unreadCount}
+                  </span>
+                )}
+              </div>
+              <p className="font-inter text-xs text-gray-400 truncate mt-0.5">
+                {c.lastMessage.sender_id === account.id ? '나: ' : ''}{c.lastMessage.content}
+              </p>
+            </div>
+            <span className="font-inter text-[11px] text-gray-300 shrink-0">{timeAgoAbs(c.lastMessage.created_at, now)}</span>
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 function CommunityTab({ account, assetsById, achievements }) {
   const [sub, setSub] = useState('forum');
+  const [dmTarget, setDmTarget] = useState(null); // { userId, nickname }
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const refreshUnread = () => {
+    if (!account) return;
+    fetchUnreadMessageCount(account.id).then(setUnreadCount).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!account) { setUnreadCount(0); return; }
+    refreshUnread();
+    const interval = setInterval(refreshUnread, 10000);
+    return () => clearInterval(interval);
+  }, [account?.id]);
+
+  const openThread = (userId, nickname) => setDmTarget({ userId, nickname });
+
   return (
     <div>
       <div className="flex gap-1.5 mb-7">
@@ -2071,16 +2324,37 @@ function CommunityTab({ account, assetsById, achievements }) {
           <button
             key={s.id}
             onClick={() => setSub(s.id)}
-            className="chip-tag font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
+            className="chip-tag relative font-inter font-medium text-xs px-3.5 py-1.5 rounded-full border transition-colors"
             style={sub === s.id
               ? { background: 'var(--ink)', color: 'var(--base-bg)', borderColor: 'var(--ink)' }
               : { borderColor: 'var(--ink-faint)', color: 'var(--ink-faint)' }}
           >
             {s.label}
+            {s.id === 'dm' && unreadCount > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 font-inter font-bold text-[9px] text-white rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center"
+                style={{ background: 'var(--down)' }}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
-      {sub === 'forum' ? <ForumSection account={account} /> : <RankingSection account={account} assetsById={assetsById} achievements={achievements} />}
+
+      {sub === 'forum' && <ForumSection account={account} />}
+      {sub === 'ranking' && <RankingSection account={account} assetsById={assetsById} achievements={achievements} onMessage={openThread} />}
+      {sub === 'dm' && <DMSection account={account} onOpenThread={openThread} />}
+
+      {dmTarget && account && (
+        <ChatThreadModal
+          account={account}
+          partnerId={dmTarget.userId}
+          partnerNickname={dmTarget.nickname}
+          onClose={() => setDmTarget(null)}
+          onRead={refreshUnread}
+        />
+      )}
     </div>
   );
 }
