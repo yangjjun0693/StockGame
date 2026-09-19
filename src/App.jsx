@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { TrendingUp, LayoutDashboard, Newspaper, Users, Trophy, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Newspaper, Users, Trophy, X, ChevronRight, Sun, Moon, LogOut, Heart, MessageCircle, Send, DollarSign } from 'lucide-react';
 import { signUp, signIn, signOut, getStoredAccount, fetchPortfolio, saveSnapshot, fetchNetWorthHistory, upsertHolding, insertTransaction, fetchUnlockedAchievements, unlockAchievement, fetchHoldingsForUsers } from './lib/supabase';
 import { useMajorCoins, useMemeCoins } from './lib/coingecko';
 import { useFinnhubStocks, useFinnhubNews } from './lib/finnhub';
@@ -7,6 +7,7 @@ import { useFxRates } from './lib/fx';
 import { useCryptoNews } from './lib/cryptonews';
 import { FORUM_CATEGORIES, fetchPosts, fetchLikedPostIds, createPost, deletePost, fetchComments, addComment, toggleLike, fetchRanking } from './lib/community';
 import { searchUsers, fetchConversations, fetchThread, sendMessage as sendDirectMessage, markThreadRead, fetchUnreadCount as fetchUnreadMessageCount } from './lib/messages';
+import { sendTransfer, fetchTransfersForThread } from './lib/transfer';
 import { buildAchievements, ACHIEVEMENT_CATEGORIES } from './lib/achievements';
 
 // poesi의 팔레트 태그를 이식한 섹터 컬러 (실제 종목 12개 + FX 묶음)
@@ -2077,12 +2078,20 @@ function UserProfileModal({ userId, nickname, assetsById, achievements, onClose,
   );
 }
 
-function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead }) {
+function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead, onTransferSend }) {
   const [messages, setMessages] = useState([]);
+  const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [transferSending, setTransferSending] = useState(false);
+  const [transferError, setTransferError] = useState('');
+  const lastTransferAt = useRef(0);
+
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -2090,8 +2099,8 @@ function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead 
 
     const load = (showLoading) => {
       if (showLoading) setLoading(true);
-      return fetchThread(account.id, partnerId)
-        .then((rows) => { if (!cancelled) setMessages(rows); })
+      return Promise.all([fetchThread(account.id, partnerId), fetchTransfersForThread(account.id, partnerId)])
+        .then(([msgRows, trRows]) => { if (!cancelled) { setMessages(msgRows); setTransfers(trRows); } })
         .catch((err) => { if (!cancelled) setError(err.message || '메시지를 불러오지 못했어요.'); })
         .finally(() => { if (!cancelled && showLoading) setLoading(false); });
     };
@@ -2103,9 +2112,16 @@ function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead 
     return () => { cancelled = true; clearInterval(interval); };
   }, [account.id, partnerId]);
 
+  // 메시지 + 송금 내역을 시간순으로 합쳐서 하나의 타임라인으로 렌더링
+  const events = useMemo(() => {
+    const a = messages.map((m) => ({ kind: 'message', id: `m-${m.id}`, created_at: m.created_at, data: m }));
+    const b = transfers.map((t) => ({ kind: 'transfer', id: `t-${t.id}`, created_at: t.created_at, data: t }));
+    return [...a, ...b].sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+  }, [messages, transfers]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length]);
+  }, [events.length]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -2119,6 +2135,34 @@ function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead 
       setError(err.message || '전송에 실패했어요.');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleTransfer = async (e) => {
+    e.preventDefault();
+    if (transferSending) return;
+    // 조건과 무관하게 0.5초 쿨타임 — 연타 방지
+    if (Date.now() - lastTransferAt.current < 500) return;
+    lastTransferAt.current = Date.now();
+
+    const num = Number(amount);
+    if (!num || num <= 0) { setTransferError('금액을 입력해주세요.'); return; }
+
+    setTransferError('');
+    setTransferSending(true);
+    const start = Date.now();
+    try {
+      const row = await onTransferSend(partnerId, num);
+      setTransfers((prev) => [...prev, row]);
+      setAmount('');
+      setTransferOpen(false);
+    } catch (err) {
+      setTransferError(err.message || '송금에 실패했어요.');
+    } finally {
+      // 요청이 너무 빨리 끝나도 "보내는 중..."이 잠깐은 보이도록 최소 0.5초 유지
+      const elapsed = Date.now() - start;
+      if (elapsed < 500) await new Promise((r) => setTimeout(r, 500 - elapsed));
+      setTransferSending(false);
     }
   };
 
@@ -2138,21 +2182,45 @@ function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pr-1 -mr-1">
           {loading ? (
             <p className="font-inter text-xs text-gray-300 text-center py-6">불러오는 중...</p>
-          ) : messages.length === 0 ? (
+          ) : events.length === 0 ? (
             <p className="font-inter text-xs text-gray-300 text-center py-6">아직 메시지가 없어요. 먼저 인사를 건네보세요.</p>
           ) : (
-            messages.map((m) => {
+            events.map((ev) => {
+              if (ev.kind === 'transfer') {
+                const t = ev.data;
+                const mine = t.sender_id === account.id;
+                return (
+                  <div key={ev.id} className="fade-up-item flex justify-center py-1">
+                    <div
+                      className="inline-flex items-center gap-1.5 font-inter font-semibold text-[11px] px-3 py-1.5 rounded-full"
+                      style={{ background: 'var(--up-bg)', color: 'var(--up)' }}
+                    >
+                      <DollarSign size={12} />
+                      {mine ? `${fmt(t.amount)} 보냄` : `${fmt(t.amount)} 받음`}
+                      <span style={{ color: 'var(--ink-faint)' }}>· {timeAgoAbs(t.created_at, now)}</span>
+                    </div>
+                  </div>
+                );
+              }
+              const m = ev.data;
               const mine = m.sender_id === account.id;
               return (
-                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div key={ev.id} className={`fade-up-item flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div className="max-w-[75%]">
                     <div
                       className="font-inter text-xs leading-5 px-3.5 py-2 rounded-2xl whitespace-pre-wrap break-words"
-                      style={mine ? { background: 'var(--ink)', color: 'var(--base-bg)' } : { background: '#F3F4F6', color: 'var(--ink)' }}
+                      style={mine ? { background: 'var(--ink)', color: 'var(--base-bg)' } : { background: 'var(--bubble-bg)', color: 'var(--ink)' }}
                     >
                       {m.content}
                     </div>
-                    <p className={`font-inter text-[10px] text-gray-300 mt-1 ${mine ? 'text-right' : ''}`}>{timeAgoAbs(m.created_at, now)}</p>
+                    <p className={`font-inter text-[10px] mt-1 flex items-center gap-1 ${mine ? 'justify-end text-right' : ''}`}>
+                      {mine && (
+                        <span style={{ color: m.read_at ? 'var(--up)' : 'var(--ink-faint)' }}>
+                          {m.read_at ? '읽음' : '안읽음'}
+                        </span>
+                      )}
+                      <span className="text-gray-300">{timeAgoAbs(m.created_at, now)}</span>
+                    </p>
                   </div>
                 </div>
               );
@@ -2163,7 +2231,56 @@ function ChatThreadModal({ account, partnerId, partnerNickname, onClose, onRead 
 
         {error && <p className="font-inter text-[11px] text-red-500 mt-2">{error}</p>}
 
+        <div
+          style={{
+            maxHeight: transferOpen ? 52 : 0,
+            opacity: transferOpen ? 1 : 0,
+            overflow: 'hidden',
+            transition: 'max-height 0.35s var(--ease), opacity 0.25s ease',
+          }}
+        >
+          <form onSubmit={handleTransfer} className="flex items-center gap-2 pt-3 shrink-0">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              autoFocus={transferOpen}
+              placeholder="보낼 금액 ($)"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              tabIndex={transferOpen ? 0 : -1}
+              className="flex-1 px-3.5 py-2 rounded-full border border-gray-200 font-inter text-xs outline-none focus:border-gray-400 transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={transferSending || !amount}
+              tabIndex={transferOpen ? 0 : -1}
+              className="pill-btn pill-btn-primary font-inter font-semibold text-xs text-white rounded-full px-4 py-2 disabled:opacity-30 whitespace-nowrap"
+              style={{ background: 'var(--up)' }}
+            >
+              {transferSending ? '보내는 중..' : '송금'}
+            </button>
+          </form>
+        </div>
+        {transferError && <p className="font-inter text-[11px] text-red-500 mt-1.5">{transferError}</p>}
+
         <form onSubmit={handleSend} className="flex items-center gap-2 pt-4 mt-2 border-t border-gray-100 shrink-0">
+          <button
+            type="button"
+            onClick={() => { setTransferOpen((v) => !v); setTransferError(''); }}
+            className="transfer-toggle flex items-center justify-center gap-1.5 font-inter font-bold text-xs rounded-full w-8 h-8 shrink-0 whitespace-nowrap"
+            style={{
+              background: transferOpen ? 'var(--up)' : 'var(--glass-bg)',
+              color: transferOpen ? '#fff' : 'var(--ink-faint)',
+              border: `1px solid ${transferOpen ? 'var(--up)' : 'var(--glass-border)'}`,
+              boxShadow: transferOpen ? '0 4px 14px rgba(18,161,80,0.25)' : '0 2px 8px rgba(0,0,0,0.05)',
+              backdropFilter: 'blur(14px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(14px) saturate(180%)',
+              transition: 'background 0.25s var(--ease), color 0.25s var(--ease), border-color 0.25s var(--ease), box-shadow 0.25s var(--ease), transform 0.2s var(--ease)',
+            }}
+          >
+            <DollarSign size={14} />
+          </button>
           <input
             type="text"
             placeholder="메시지를 입력하세요"
@@ -2298,7 +2415,7 @@ function DMSection({ account, onOpenThread }) {
   );
 }
 
-function CommunityTab({ account, assetsById, achievements }) {
+function CommunityTab({ account, assetsById, achievements, onTransferSend }) {
   const [sub, setSub] = useState('forum');
   const [dmTarget, setDmTarget] = useState(null); // { userId, nickname }
   const [unreadCount, setUnreadCount] = useState(0);
@@ -2353,6 +2470,7 @@ function CommunityTab({ account, assetsById, achievements }) {
           partnerNickname={dmTarget.nickname}
           onClose={() => setDmTarget(null)}
           onRead={refreshUnread}
+          onTransferSend={onTransferSend}
         />
       )}
     </div>
@@ -2737,6 +2855,19 @@ export default function StockGame() {
     }
   };
 
+  // 송금: buy/sell과 동일한 신뢰 모델 — 로컬 cash를 그대로 보내서 서버가 그 값
+  // 기준으로 차감(한도/자기자신 체크는 RPC에서), 성공하면 로컬도 바로 반영.
+  const handleTransferSend = async (recipientId, amount) => {
+    if (!account) throw new Error('로그인이 필요해요.');
+    if (cash < amount) throw new Error('잔액이 부족해요.');
+    const row = await sendTransfer(account.id, recipientId, amount, cash);
+    const newCash = cash - amount;
+    setCash(newCash);
+    const holdingsValue = totalHoldingsValue(holdings, assetsById);
+    saveSnapshot(account.id, newCash, newCash + holdingsValue).catch(() => {});
+    return row;
+  };
+
   if (!account) return <LoginScreen onAuthed={setAccount} />;
   if (loadError) {
     return (
@@ -2801,7 +2932,7 @@ export default function StockGame() {
             <MarketTab stocks={stocks} coins={coins} fx={fx} holdings={holdings} cash={cash} onBuy={handleBuy} onSell={handleSell} onOpenDetail={setDetailId} />
           )}
           {tab === 'news' && <NewsTab articles={news} />}
-          {tab === 'community' && <CommunityTab account={account} assetsById={assetsById} achievements={achievements} />}
+          {tab === 'community' && <CommunityTab account={account} assetsById={assetsById} achievements={achievements} onTransferSend={handleTransferSend} />}
           {tab === 'dashboard' && (
             <DashboardTab
               cash={cash}

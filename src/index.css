@@ -16,6 +16,7 @@
   --up-bg: rgba(18, 161, 80, 0.12);
   --down: #E4463C;
   --down-bg: rgba(228, 70, 60, 0.1);
+  --bubble-bg: #F3F4F6;
 }
 
 html.dark {
@@ -30,6 +31,7 @@ html.dark {
   --up-bg: rgba(52, 199, 124, 0.14);
   --down: #ff6b61;
   --down-bg: rgba(255, 107, 97, 0.12);
+  --bubble-bg: #2a2a2f;
 }
 
 /* ===== G3 corners (squircle / superellipse) ===== */
@@ -98,6 +100,13 @@ html.dark .bg-gray-900:hover { background-color: #d8d8d8 !important; }
 html.dark .border-gray-50 { border-color: #29292d !important; }
 html.dark .border-gray-100 { border-color: #2c2c31 !important; }
 html.dark .border-gray-200 { border-color: #35353a !important; }
+
+/* hover: 변형은 위 규칙이 못 잡음 (Tailwind가 별도 선택자로 컴파일) — 커뮤니티 탭
+   리스트 항목(포럼 글/랭킹/DM 대화) hover가 다크모드에서 밝은 회색으로 뜨는 문제 수정 */
+html.dark .hover\:bg-gray-50:hover { background-color: #232327 !important; }
+html.dark .hover\:bg-gray-50\/50:hover { background-color: rgba(35, 35, 39, 0.6) !important; }
+html.dark .hover\:text-gray-600:hover { color: #b0b0b6 !important; }
+html.dark .hover\:text-gray-700:hover { color: #c8c8ce !important; }
 
 /* ===== Tabbar (liquid glass, poesi 원본) ===== */
 .tabbar-wrap {
@@ -245,6 +254,11 @@ html.dark .tabbar::after {
 
 .sector-tag, .palette-tag { transition: all 0.2s ease; cursor: pointer; }
 .sector-tag:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+/* 채팅 타임라인(메시지/송금)에 새 항목이 들어올 때 살짝 떠오르는 효과 — 폴링으로
+   리렌더돼도 React가 기존 key는 재마운트 안 하니 새로 들어온 것만 재생됨 */
+.fade-up-item { animation: fadeUp 0.4s ease forwards; }
+.transfer-toggle:hover { transform: translateY(-1px); }
 
 /* ===== 모달 (auth-modal 이식) ===== */
 .modal-backdrop { animation: fadeIn 0.25s ease; }
