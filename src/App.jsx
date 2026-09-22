@@ -2868,6 +2868,11 @@ export default function StockGame() {
     return row;
   };
 
+  // 탭 바꿀 때마다 맨 위로 스크롤
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [tab]);
+
   if (!account) return <LoginScreen onAuthed={setAccount} />;
   if (loadError) {
     return (
