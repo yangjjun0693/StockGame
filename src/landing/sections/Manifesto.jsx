@@ -3,14 +3,14 @@ import { motion, useScroll, useTransform } from 'motion/react'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 
 const TEXT =
-  '돈은 가짜지만 시세는 진짜예요. 틀려도 잃는 건 가상의 만 달러뿐이고, 남는 건 진짜 감각이에요.'
+  '사 보기 전에는 모르는 게 많아요. 오르는 날도, 내리는 날도, 청산당하는 날도 직접 겪어 보세요.'
 
 function Word({ progress, range, children }) {
   const opacity = useTransform(progress, range, [0.14, 1])
   return <motion.span style={{ opacity }}>{children} </motion.span>
 }
 
-// One large serif paragraph whose words brighten from 14% to 100% opacity
+// One large paragraph whose words brighten from 14% to 100% opacity
 // as the section scrolls through the viewport.
 export default function Manifesto() {
   const reduced = useReducedMotion()

@@ -8,7 +8,7 @@ import Nav from './sections/Nav'
 import Hero from './sections/Hero'
 import Manifesto from './sections/Manifesto'
 import Markets from './sections/Markets'
-import Features from './sections/Features'
+import Liquidation from './sections/Liquidation'
 import FinalCta from './sections/FinalCta'
 import Footer from './sections/Footer'
 
@@ -66,7 +66,7 @@ export default function Landing({ onPlay }) {
         <Hero onPlay={onPlay} />
         <Manifesto />
         <Markets />
-        <Features />
+        <Liquidation />
         <FinalCta onPlay={onPlay} />
       </main>
       <Footer />

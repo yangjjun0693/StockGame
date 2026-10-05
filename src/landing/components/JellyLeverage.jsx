@@ -98,7 +98,7 @@ export default function JellyLeverage() {
 
   const notional = MARGIN * value
   const gain = notional * 0.02
-  const liqPct = 100 / value
+  const liqPct = 85 / value
   const liq = value > 20 ? `-${liqPct.toFixed(1)}%` : `-${Math.round(liqPct)}%`
   const hot = value >= 25
 
@@ -113,7 +113,7 @@ export default function JellyLeverage() {
         transition={{ type: 'spring', stiffness: 220, damping: 20, delay: 0.35 }}
       >
         <p className="lp-jelly-scenario">
-          시드 <strong>$10,000</strong> 중 <strong>$1,000</strong>을 걸면
+          증거금 <strong>$1,000</strong>을 걸면
         </p>
 
         <div className="lp-jelly-number" aria-hidden="true">

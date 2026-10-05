@@ -142,10 +142,14 @@ const FX_TV_SYMBOL = {
 
 // 이 밈코인들은 TradingView(바이낸스 심볼)에 데이터가 없거나 부실해서
 // 상세 모달에서 TV 차트 탭 자체를 숨기고 항상 "간단" 차트만 보여준다.
-const NO_TV_SYMBOLS = new Set(['BABYDOGE', 'FARTCOIN', 'SPX', 'BRETT', 'POPCAT', 'MOG', 'MEW', 'GOAT', 'MYRO']);
+const NO_TV_SYMBOLS = new Set(['MOG', 'MEW', 'GOAT', 'MYRO']);
 
 function tvSymbolFor(asset) {
   if (!asset) return null;
+  if (asset.symbol === 'BRETT') return `POLONIEX:${asset.symbol.toUpperCase()}USDT`;
+  if (asset.symbol === 'POPCAT') return `COINBASE:${asset.symbol.toUpperCase()}USDC`;
+  if (asset.symbol === 'BABYDOGE') return `OKX:${asset.symbol.toUpperCase()}USDT`;
+  if (asset.symbol === 'SPX' || asset.symbol === 'FARTCOIN' ) return `MEXC:${asset.symbol.toUpperCase()}USDT`;
   if (asset.assetType === 'coin') return `BINANCE:${asset.symbol.toUpperCase()}USDT`;
   if (asset.assetType === 'fx') return FX_TV_SYMBOL[asset.code] || `FX:${asset.symbol?.replace('/', '')}`;
   const exch = STOCK_TV_EXCHANGE[asset.symbol];
