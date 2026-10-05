@@ -1,4 +1,4 @@
-port { motion } from 'motion/react'
+import { motion } from 'motion/react'
 import { EASE_OUT_SOFT } from '../lib/easings'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import PillButton from '../components/PillButton'
