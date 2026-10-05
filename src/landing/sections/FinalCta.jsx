@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+port { motion } from 'motion/react'
 import { EASE_OUT_SOFT } from '../lib/easings'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import PillButton from '../components/PillButton'
@@ -15,12 +15,12 @@ export default function FinalCta({ onPlay }) {
         viewport={{ once: true, amount: 0.5 }}
         transition={{ duration: 1, ease: EASE_OUT_SOFT }}
       >
-        <span className="lp-cta-line">이제 직접</span>
-        <span className="lp-cta-line">해봐요</span>
+        <span className="lp-cta-line">이제는</span>
+        <span className="lp-cta-line">직접</span>
       </motion.h2>
       <div className="lp-cta-action">
         <PillButton onPlay={onPlay} size="lg">
-          들어가기
+          해보기
         </PillButton>
       </div>
     </section>
