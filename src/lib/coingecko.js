@@ -30,25 +30,19 @@ const MAJOR_COINS = [
 
 // 20 curated, well-known meme coins (fixed lineup — see /areas/stockgame.md).
 const MEME_COINS = [
+  { id: 'ripple', symbol: 'XRP', name: 'Ripple', cc: 'XRP' },
+  { id: 'hyperliquid', symbol: 'HYPE', name: 'Hyperliquid', cc: 'HYPE' },
+  { id: 'tron', symbol: 'TRX', name: 'Tron', cc: 'TRX' },
+  { id: 'zcash', symbol: 'ZEC', name: 'Zcash', cc: 'ZEC' },
   { id: 'dogecoin', symbol: 'DOGE', name: 'Dogecoin', cc: 'DOGE' },
   { id: 'shiba-inu', symbol: 'SHIB', name: 'Shiba Inu', cc: 'SHIB' },
   { id: 'pepe', symbol: 'PEPE', name: 'Pepe', cc: 'PEPE' },
-  { id: 'dogwifcoin', symbol: 'WIF', name: 'dogwifhat', cc: 'WIF' },
   { id: 'bonk', symbol: 'BONK', name: 'Bonk', cc: 'BONK' },
-  { id: 'floki', symbol: 'FLOKI', name: 'Floki', cc: 'FLOKI' },
-  { id: 'based-brett', symbol: 'BRETT', name: 'Brett', cc: 'BRETT' },
-  { id: 'mog-coin', symbol: 'MOG', name: 'Mog Coin', cc: 'MOG' },
-  { id: 'book-of-meme', symbol: 'BOME', name: 'Book of Meme', cc: 'BOME' },
   { id: 'popcat', symbol: 'POPCAT', name: 'Popcat', cc: 'POPCAT' },
-  { id: 'cat-in-a-dogs-world', symbol: 'MEW', name: 'cat in a dogs world', cc: 'MEW' },
-  { id: 'baby-doge-coin', symbol: 'BABYDOGE', name: 'Baby Doge Coin', cc: 'BABYDOGE' },
-  { id: 'turbo', symbol: 'TURBO', name: 'Turbo', cc: 'TURBO' },
-  { id: 'myro', symbol: 'MYRO', name: 'Myro', cc: 'MYRO' },
   { id: 'official-trump', symbol: 'TRUMP', name: 'Official Trump', cc: 'TRUMP' },
   { id: 'spx6900', symbol: 'SPX', name: 'SPX6900', cc: 'SPX' },
   { id: 'fartcoin', symbol: 'FARTCOIN', name: 'Fartcoin', cc: 'FARTCOIN' },
   { id: 'notcoin', symbol: 'NOT', name: 'Notcoin', cc: 'NOT' },
-  { id: 'pudgy-penguins', symbol: 'PENGU', name: 'Pudgy Penguins', cc: 'PENGU' },
   { id: 'goatseus-maximus', symbol: 'GOAT', name: 'Goatseus Maximus', cc: 'GOAT' },
 ];
 
